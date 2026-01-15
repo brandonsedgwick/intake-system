@@ -23,9 +23,11 @@ import {
   Trash2,
   GripVertical,
   Save,
+  ClipboardCheck,
 } from "lucide-react";
+import { EvaluationConfig } from "@/components/settings/evaluation-config";
 
-type SettingsTab = "general" | "sheets" | "followups" | "intake-fields";
+type SettingsTab = "general" | "sheets" | "followups" | "intake-fields" | "evaluation";
 
 function GeneralSettings() {
   const { data: settings, isLoading } = useSettings();
@@ -609,6 +611,7 @@ export default function SettingsPage() {
     { id: "general" as const, label: "General", icon: Settings },
     { id: "followups" as const, label: "Follow-ups", icon: Clock },
     { id: "intake-fields" as const, label: "Intake Fields", icon: FileText },
+    { id: "evaluation" as const, label: "Evaluation", icon: ClipboardCheck },
   ];
 
   return (
@@ -650,6 +653,7 @@ export default function SettingsPage() {
           {activeTab === "sheets" && <SheetsSettings />}
           {activeTab === "followups" && <FollowUpSettings />}
           {activeTab === "intake-fields" && <IntakeFieldsSettings />}
+          {activeTab === "evaluation" && <EvaluationConfig />}
         </div>
       </div>
     </div>

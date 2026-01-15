@@ -1,9 +1,19 @@
 "use client";
 
+import { useState, useMemo } from "react";
 import Link from "next/link";
-import { useClients } from "@/hooks/use-clients";
+import { ClipboardCheck, Loader2, CheckCircle, AlertCircle } from "lucide-react";
+import { useClients, useEvaluateClient } from "@/hooks/use-clients";
 import { Client, ClientStatus } from "@/types/client";
 import { formatRelativeTime } from "@/lib/utils";
+import { useToast } from "@/components/ui/toast";
+
+interface EvaluationProgress {
+  total: number;
+  completed: number;
+  current: string | null;
+  results: { clientId: string; clientName: string; status: "success" | "error" | "flagged"; message?: string }[];
+}
 
 const statusConfig: Record<
   ClientStatus,
@@ -14,6 +24,16 @@ const statusConfig: Record<
     label: "Evaluating",
     bgColor: "bg-purple-100",
     textColor: "text-purple-700",
+  },
+  evaluation_complete: {
+    label: "Evaluation Complete",
+    bgColor: "bg-green-100",
+    textColor: "text-green-700",
+  },
+  evaluation_flagged: {
+    label: "Evaluation Complete",
+    bgColor: "bg-red-100",
+    textColor: "text-red-700",
   },
   pending_outreach: {
     label: "Pending Outreach",
@@ -103,6 +123,8 @@ function needsAction(client: Client): boolean {
   const actionableStatuses: ClientStatus[] = [
     "new",
     "pending_evaluation",
+    "evaluation_complete",
+    "evaluation_flagged",
     "pending_outreach",
     "outreach_sent",
     "follow_up_1",
@@ -115,27 +137,153 @@ function needsAction(client: Client): boolean {
 }
 
 export function PendingActionsTable() {
-  const { data: clients, isLoading } = useClients();
+  const { data: clients, isLoading, refetch } = useClients();
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [evaluationProgress, setEvaluationProgress] = useState<EvaluationProgress | null>(null);
+  const evaluateClient = useEvaluateClient();
+  const { addToast, updateToast } = useToast();
 
   // Filter to actionable clients and sort by status priority
-  const pendingClients = clients
-    ?.filter(needsAction)
-    .sort((a, b) => {
-      // Priority order
-      const statusOrder: ClientStatus[] = [
-        "new",
-        "pending_evaluation",
-        "replied",
-        "ready_to_schedule",
-        "pending_outreach",
-        "follow_up_1",
-        "follow_up_2",
-        "outreach_sent",
-        "pending_referral",
-      ];
-      return statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status);
-    })
-    .slice(0, 10); // Show top 10
+  const pendingClients = useMemo(() => {
+    return clients
+      ?.filter(needsAction)
+      .sort((a, b) => {
+        // Priority order
+        const statusOrder: ClientStatus[] = [
+          "new",
+          "pending_evaluation",
+          "evaluation_flagged",
+          "evaluation_complete",
+          "replied",
+          "ready_to_schedule",
+          "pending_outreach",
+          "follow_up_1",
+          "follow_up_2",
+          "outreach_sent",
+          "pending_referral",
+        ];
+        return statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status);
+      })
+      .slice(0, 10); // Show top 10
+  }, [clients]);
+
+  const allSelected = pendingClients && pendingClients.length > 0 &&
+    pendingClients.every(client => selectedIds.has(client.id));
+
+  const someSelected = selectedIds.size > 0;
+
+  const handleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(pendingClients?.map(c => c.id) || []));
+    }
+  };
+
+  const handleSelectOne = (clientId: string) => {
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(clientId)) {
+      newSelected.delete(clientId);
+    } else {
+      newSelected.add(clientId);
+    }
+    setSelectedIds(newSelected);
+  };
+
+  const handleEvaluateInquiries = async () => {
+    const selectedClients = pendingClients?.filter(c => selectedIds.has(c.id)) || [];
+    if (selectedClients.length === 0) return;
+
+    // Show loading toast
+    const toastId = addToast({
+      type: "loading",
+      title: "Evaluating inquiries...",
+      message: `Processing ${selectedClients.length} client${selectedClients.length === 1 ? "" : "s"}`,
+    });
+
+    // Initialize progress
+    setEvaluationProgress({
+      total: selectedClients.length,
+      completed: 0,
+      current: selectedClients[0].firstName + " " + selectedClients[0].lastName,
+      results: [],
+    });
+
+    const results: EvaluationProgress["results"] = [];
+
+    // Evaluate each client sequentially
+    for (let i = 0; i < selectedClients.length; i++) {
+      const client = selectedClients[i];
+      const clientName = `${client.firstName} ${client.lastName}`;
+
+      setEvaluationProgress(prev => prev ? {
+        ...prev,
+        current: clientName,
+        completed: i,
+      } : null);
+
+      try {
+        const result = await evaluateClient.mutateAsync(client.id);
+
+        // Determine result status based on the new client status
+        const status = result.client?.status === "evaluation_flagged" ? "flagged" : "success";
+        results.push({
+          clientId: client.id,
+          clientName,
+          status,
+          message: status === "flagged" ? "Flagged for review" : "Evaluation complete",
+        });
+      } catch (error) {
+        results.push({
+          clientId: client.id,
+          clientName,
+          status: "error",
+          message: error instanceof Error ? error.message : "Evaluation failed",
+        });
+      }
+    }
+
+    // Update final progress
+    setEvaluationProgress(prev => prev ? {
+      ...prev,
+      completed: selectedClients.length,
+      current: null,
+      results,
+    } : null);
+
+    // Count results
+    const successCount = results.filter(r => r.status === "success").length;
+    const flaggedCount = results.filter(r => r.status === "flagged").length;
+    const errorCount = results.filter(r => r.status === "error").length;
+
+    // Update toast with final result
+    if (errorCount > 0) {
+      updateToast(toastId, {
+        type: "warning",
+        title: "Evaluation completed with errors",
+        message: `${successCount} complete, ${flaggedCount} flagged, ${errorCount} failed`,
+      });
+    } else if (flaggedCount > 0) {
+      updateToast(toastId, {
+        type: "warning",
+        title: "Evaluation complete",
+        message: `${successCount} clear, ${flaggedCount} flagged for review`,
+      });
+    } else {
+      updateToast(toastId, {
+        type: "success",
+        title: "Evaluation complete",
+        message: `All ${successCount} client${successCount === 1 ? "" : "s"} evaluated successfully`,
+      });
+    }
+
+    // Clear selection after a brief delay
+    setTimeout(() => {
+      setSelectedIds(new Set());
+      setEvaluationProgress(null);
+      refetch();
+    }, 2000);
+  };
 
   if (isLoading) {
     return (
@@ -153,11 +301,87 @@ export function PendingActionsTable() {
 
   return (
     <div className="bg-white rounded-xl border border-gray-200">
-      <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-        <h2 className="font-semibold text-gray-900">Pending Actions</h2>
-        <span className="text-sm text-gray-500">
-          {pendingClients?.length || 0} items
-        </span>
+      <div className="px-6 py-4 border-b border-gray-200">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-gray-900">Pending Actions</h2>
+          <span className="text-sm text-gray-500">
+            {pendingClients?.length || 0} items
+          </span>
+        </div>
+
+        {/* Evaluation Progress */}
+        {evaluationProgress && (
+          <div className="mt-3 p-4 bg-slate-50 border border-slate-200 rounded-lg">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+                <span className="text-sm font-medium text-gray-900">
+                  Evaluating inquiries...
+                </span>
+              </div>
+              <span className="text-sm text-gray-500">
+                {evaluationProgress.completed} / {evaluationProgress.total}
+              </span>
+            </div>
+
+            {/* Progress bar */}
+            <div className="h-2 bg-gray-200 rounded-full overflow-hidden mb-2">
+              <div
+                className="h-full bg-blue-600 transition-all duration-300 ease-out"
+                style={{ width: `${(evaluationProgress.completed / evaluationProgress.total) * 100}%` }}
+              />
+            </div>
+
+            {/* Current client */}
+            {evaluationProgress.current && (
+              <p className="text-sm text-gray-600">
+                Processing: <span className="font-medium">{evaluationProgress.current}</span>
+              </p>
+            )}
+
+            {/* Results summary when complete */}
+            {evaluationProgress.completed === evaluationProgress.total && evaluationProgress.results.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-slate-200 space-y-1">
+                {evaluationProgress.results.map((result) => (
+                  <div key={result.clientId} className="flex items-center gap-2 text-sm">
+                    {result.status === "success" ? (
+                      <CheckCircle className="w-4 h-4 text-green-500" />
+                    ) : result.status === "flagged" ? (
+                      <AlertCircle className="w-4 h-4 text-amber-500" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-red-500" />
+                    )}
+                    <span className={
+                      result.status === "success" ? "text-green-700" :
+                      result.status === "flagged" ? "text-amber-700" :
+                      "text-red-700"
+                    }>
+                      {result.clientName}: {result.message}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Selection toolbar - hide during evaluation */}
+        {someSelected && !evaluationProgress && (
+          <div className="mt-3 flex items-center gap-3 p-2 bg-blue-50 rounded-lg">
+            <span className="text-sm text-blue-700 font-medium">
+              {selectedIds.size} selected
+            </span>
+            <div className="h-4 w-px bg-blue-200" />
+            <button
+              onClick={handleEvaluateInquiries}
+              disabled={evaluateClient.isPending}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 rounded-lg transition-colors"
+            >
+              <ClipboardCheck className="w-4 h-4" />
+              Evaluate Inquiries
+            </button>
+          </div>
+        )}
       </div>
 
       {!pendingClients || pendingClients.length === 0 ? (
@@ -170,6 +394,14 @@ export function PendingActionsTable() {
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
+                <th className="w-12 px-6 py-3">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={handleSelectAll}
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
+                  />
+                </th>
                 <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">
                   Client
                 </th>
@@ -195,12 +427,21 @@ export function PendingActionsTable() {
                 const status = statusConfig[client.status] || statusConfig.new;
                 const initials = getInitials(client.firstName, client.lastName);
                 const avatarColor = getAvatarColor(client.firstName);
+                const isSelected = selectedIds.has(client.id);
 
                 return (
                   <tr
                     key={client.id}
-                    className="hover:bg-gray-50 transition-colors"
+                    className={`hover:bg-gray-50 transition-colors ${isSelected ? "bg-blue-50" : ""}`}
                   >
+                    <td className="w-12 px-6 py-4">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => handleSelectOne(client.id)}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
+                      />
+                    </td>
                     <td className="px-6 py-4">
                       <Link
                         href={`/clients/${client.id}`}

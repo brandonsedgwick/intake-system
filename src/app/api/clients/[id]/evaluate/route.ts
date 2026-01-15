@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/auth-options";
-import { clientsApi, auditLogApi } from "@/lib/api/google-sheets";
+import { clientsApi, auditLogApi, evaluationCriteriaApi } from "@/lib/api/google-sheets";
 import {
   evaluateClient,
   checkForReferralKeywords,
+  EvaluationResult,
 } from "@/lib/services/evaluation";
 import { ClientStatus } from "@/types/client";
 
@@ -29,48 +30,51 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
-    // TODO: Fetch custom criteria from EvaluationCriteria sheet
-    // For now, use default criteria
+    // Fetch evaluation criteria from sheet
+    const criteria = await evaluationCriteriaApi.getActive(session.accessToken);
 
     // Run evaluation
-    const result = evaluateClient(client);
+    const result = evaluateClient(client, criteria);
 
     // Check for referral keywords in presenting concerns
     const keywordCheck = checkForReferralKeywords(
       client.presentingConcerns || ""
     );
 
-    if (keywordCheck.flagged) {
-      result.notes.push(
-        `⚠ Referral keywords detected: ${keywordCheck.keywords.join(", ")}`
-      );
-      if (result.action !== "referral") {
-        result.action = "review";
-      }
-    }
-
     // Determine new status based on evaluation result
     let newStatus: ClientStatus;
-    switch (result.action) {
-      case "accept":
-        newStatus = "pending_outreach";
-        break;
-      case "referral":
-        newStatus = "pending_referral";
-        break;
-      case "review":
-        newStatus = "pending_evaluation"; // Keep in pending for manual review
-        break;
-      default:
-        newStatus = "pending_outreach";
+    let referralReason: string | undefined;
+    const hasFlagsOrKeywords = result.flags.length > 0 || keywordCheck.flagged;
+
+    if (result.hasUrgent) {
+      // Urgent flags go straight to pending referral
+      newStatus = "pending_referral";
+      referralReason = result.flags.find((f) => f.action === "flag_urgent")?.criteriaName;
+    } else if (hasFlagsOrKeywords) {
+      // Any flags or keywords = evaluation complete but flagged (red)
+      newStatus = "evaluation_flagged";
+      if (keywordCheck.flagged) {
+        referralReason = `Keywords: ${keywordCheck.keywords.join(", ")}`;
+      }
+    } else {
+      // No flags = evaluation complete (green)
+      newStatus = "evaluation_complete";
+    }
+
+    // Build evaluation notes
+    const notes = [
+      ...result.flags.map((f) => `[${f.action}] ${f.criteriaName}: ${f.matchedValue}`),
+    ];
+
+    if (keywordCheck.flagged) {
+      notes.push(`Keywords detected: ${keywordCheck.keywords.join(", ")}`);
     }
 
     // Update client with evaluation results
     const updatedClient = await clientsApi.update(session.accessToken, id, {
       status: newStatus,
-      evaluationScore: result.score,
-      evaluationNotes: result.notes.join("\n"),
-      referralReason: result.referralReason,
+      evaluationNotes: notes.join("\n"),
+      referralReason,
     });
 
     // Log the action
@@ -82,12 +86,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       entityId: id,
       previousValue: JSON.stringify({
         status: client.status,
-        evaluationScore: client.evaluationScore,
       }),
       newValue: JSON.stringify({
         status: newStatus,
-        evaluationScore: result.score,
-        action: result.action,
+        flags: result.flags.length,
+        hasUrgent: result.hasUrgent,
       }),
     });
 

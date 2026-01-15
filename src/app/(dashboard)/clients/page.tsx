@@ -34,6 +34,16 @@ const STATUS_CONFIG: Record<
     color: "bg-yellow-100 text-yellow-800",
     icon: <Clock className="w-3 h-3" />,
   },
+  evaluation_complete: {
+    label: "Eval Complete",
+    color: "bg-green-100 text-green-800",
+    icon: <CheckCircle className="w-3 h-3" />,
+  },
+  evaluation_flagged: {
+    label: "Eval Flagged",
+    color: "bg-red-100 text-red-800",
+    icon: <AlertCircle className="w-3 h-3" />,
+  },
   pending_outreach: {
     label: "Ready for Outreach",
     color: "bg-purple-100 text-purple-800",

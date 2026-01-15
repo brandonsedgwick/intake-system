@@ -1,6 +1,8 @@
 export type ClientStatus =
   | "new"
   | "pending_evaluation"
+  | "evaluation_complete"
+  | "evaluation_flagged"
   | "pending_outreach"
   | "outreach_sent"
   | "follow_up_1"
@@ -130,25 +132,41 @@ export interface EmailTemplate {
   updatedBy?: string;
 }
 
+export type EvaluationOperator =
+  | "exists"
+  | "not_exists"
+  | "equals"
+  | "not_equals"
+  | "contains"
+  | "not_contains"
+  | "contains_any"
+  | "contains_all"
+  | "in_list"
+  | "not_in_list"
+  | "regex";
+
+export type EvaluationAction = "flag" | "flag_urgent" | "flag_review";
+
 export interface EvaluationCriteria {
   id: string;
   name: string;
-  type: "required" | "scoring" | "referral";
-  field: string;
-  operator:
-    | "exists"
-    | "not_exists"
-    | "equals"
-    | "not_equals"
-    | "contains"
-    | "not_contains"
-    | "in_list"
-    | "not_in_list"
-    | "regex";
-  value: string;
-  action: "continue" | "reject" | "referral" | "flag";
-  weight: number;
+  description?: string;
+  field: keyof Client;
+  operator: EvaluationOperator;
+  value: string; // For keywords, comma-separated list
+  action: EvaluationAction;
+  priority: number; // Order of evaluation, lower = first
   isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Fields available for evaluation from the intake form
+export interface EvaluableField {
+  field: keyof Client;
+  label: string;
+  description: string;
+  type: "text" | "textarea" | "select" | "boolean";
 }
 
 export interface AuditLogEntry {

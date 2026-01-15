@@ -30,6 +30,8 @@ const STATUS_CONFIG: Record<
 > = {
   new: { label: "New", color: "text-blue-700", bgColor: "bg-blue-100" },
   pending_evaluation: { label: "Pending Evaluation", color: "text-yellow-700", bgColor: "bg-yellow-100" },
+  evaluation_complete: { label: "Evaluation Complete", color: "text-green-700", bgColor: "bg-green-100" },
+  evaluation_flagged: { label: "Evaluation Flagged", color: "text-red-700", bgColor: "bg-red-100" },
   pending_outreach: { label: "Ready for Outreach", color: "text-purple-700", bgColor: "bg-purple-100" },
   outreach_sent: { label: "Outreach Sent", color: "text-indigo-700", bgColor: "bg-indigo-100" },
   follow_up_1: { label: "Follow-up 1", color: "text-orange-700", bgColor: "bg-orange-100" },
@@ -102,6 +104,35 @@ export default function ClientDetailPage({ params }: PageProps) {
             <FileText className="w-4 h-4" />
             Evaluate Client
           </button>
+        );
+      case "evaluation_complete":
+        return (
+          <button
+            onClick={() => openEmailModal("initial_outreach")}
+            className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+          >
+            <Mail className="w-4 h-4" />
+            Generate Email
+          </button>
+        );
+      case "evaluation_flagged":
+        return (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => openEmailModal("initial_outreach")}
+              className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+            >
+              <Mail className="w-4 h-4" />
+              Generate Email
+            </button>
+            <button
+              onClick={() => openEmailModal("referral_clinical")}
+              className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700"
+            >
+              <AlertCircle className="w-4 h-4" />
+              Refer Out
+            </button>
+          </div>
         );
       case "pending_outreach":
         return (
@@ -306,34 +337,56 @@ export default function ClientDetailPage({ params }: PageProps) {
           </div>
 
           {/* Evaluation Results */}
-          {(client.evaluationScore !== undefined || client.evaluationNotes) && (
+          {(client.status === "evaluation_complete" ||
+            client.status === "evaluation_flagged" ||
+            client.evaluationNotes ||
+            client.referralReason) && (
             <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                Evaluation
-              </h2>
-              {client.evaluationScore !== undefined && (
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Evaluation Results
+                </h2>
+                {client.status === "evaluation_flagged" ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                    <AlertCircle className="w-3 h-3" />
+                    Flagged
+                  </span>
+                ) : client.status === "evaluation_complete" ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                    <CheckCircle className="w-3 h-3" />
+                    Clear
+                  </span>
+                ) : null}
+              </div>
+
+              {client.status === "evaluation_complete" && !client.evaluationNotes && !client.referralReason && (
+                <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg text-green-700">
+                  <CheckCircle className="w-5 h-5" />
+                  <span className="text-sm">No concerns detected. Ready for outreach.</span>
+                </div>
+              )}
+
+              {client.referralReason && (
                 <div className="mb-3">
-                  <div className="text-sm text-gray-500 mb-1">Score</div>
-                  <div className="flex items-center gap-2">
-                    <div
-                      className={`text-2xl font-bold ${
-                        client.evaluationScore >= 70
-                          ? "text-green-600"
-                          : client.evaluationScore >= 40
-                            ? "text-yellow-600"
-                            : "text-red-600"
-                      }`}
-                    >
-                      {client.evaluationScore}
-                    </div>
-                    <div className="text-sm text-gray-500">/ 100</div>
+                  <div className="text-sm font-medium text-gray-700 mb-2">Flags Detected:</div>
+                  <div className="space-y-2">
+                    {client.referralReason.split("; ").map((reason, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-start gap-2 p-2 bg-red-50 rounded-lg text-red-700"
+                      >
+                        <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                        <span className="text-sm">{reason}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
+
               {client.evaluationNotes && (
-                <div>
-                  <div className="text-sm text-gray-500 mb-1">Notes</div>
-                  <p className="text-gray-700 text-sm">{client.evaluationNotes}</p>
+                <div className="mt-3">
+                  <div className="text-sm text-gray-500 mb-1">Additional Notes</div>
+                  <p className="text-gray-700 text-sm whitespace-pre-wrap">{client.evaluationNotes}</p>
                 </div>
               )}
             </div>

@@ -1,62 +1,21 @@
-import { Client, EvaluationCriteria } from "@/types/client";
+import { Client, EvaluationCriteria, EvaluationAction } from "@/types/client";
 
 export interface EvaluationResult {
-  score: number;
-  action: "accept" | "referral" | "review";
-  notes: string[];
-  matchedCriteria: EvaluationCriteria[];
-  referralReason?: string;
+  clientId: string;
+  flags: EvaluationFlag[];
+  hasUrgent: boolean;
+  needsReview: boolean;
+  evaluatedAt: string;
 }
 
-/**
- * Default evaluation criteria if none are configured in the sheet
- */
-const DEFAULT_CRITERIA: EvaluationCriteria[] = [
-  {
-    id: "default-1",
-    name: "Has Email",
-    type: "required",
-    field: "email",
-    operator: "exists",
-    value: "",
-    action: "continue",
-    weight: 10,
-    isActive: true,
-  },
-  {
-    id: "default-2",
-    name: "Has Name",
-    type: "required",
-    field: "firstName",
-    operator: "exists",
-    value: "",
-    action: "continue",
-    weight: 10,
-    isActive: true,
-  },
-  {
-    id: "default-3",
-    name: "Has Insurance",
-    type: "scoring",
-    field: "insuranceProvider",
-    operator: "exists",
-    value: "",
-    action: "continue",
-    weight: 20,
-    isActive: true,
-  },
-  {
-    id: "default-4",
-    name: "Has Phone",
-    type: "scoring",
-    field: "phone",
-    operator: "exists",
-    value: "",
-    action: "continue",
-    weight: 10,
-    isActive: true,
-  },
-];
+export interface EvaluationFlag {
+  criteriaId: string;
+  criteriaName: string;
+  field: keyof Client;
+  action: EvaluationAction;
+  matchedValue: string;
+  message: string;
+}
 
 /**
  * Evaluate a field against a criterion
@@ -64,50 +23,93 @@ const DEFAULT_CRITERIA: EvaluationCriteria[] = [
 function evaluateField(
   client: Client,
   criterion: EvaluationCriteria
-): boolean {
-  const fieldValue = client[criterion.field as keyof Client];
+): { matched: boolean; value: string } {
+  const fieldValue = client[criterion.field];
+  const valueStr = String(fieldValue || "");
 
   switch (criterion.operator) {
     case "exists":
-      return !!fieldValue && String(fieldValue).trim() !== "";
+      return { matched: !!fieldValue && valueStr.trim() !== "", value: valueStr };
 
     case "not_exists":
-      return !fieldValue || String(fieldValue).trim() === "";
+      return { matched: !fieldValue || valueStr.trim() === "", value: valueStr };
 
     case "equals":
-      return String(fieldValue).toLowerCase() === criterion.value.toLowerCase();
+      return {
+        matched: valueStr.toLowerCase() === criterion.value.toLowerCase(),
+        value: valueStr,
+      };
 
     case "not_equals":
-      return String(fieldValue).toLowerCase() !== criterion.value.toLowerCase();
+      return {
+        matched: valueStr.toLowerCase() !== criterion.value.toLowerCase(),
+        value: valueStr,
+      };
 
     case "contains":
-      return String(fieldValue || "")
-        .toLowerCase()
-        .includes(criterion.value.toLowerCase());
+      return {
+        matched: valueStr.toLowerCase().includes(criterion.value.toLowerCase()),
+        value: valueStr,
+      };
 
     case "not_contains":
-      return !String(fieldValue || "")
-        .toLowerCase()
-        .includes(criterion.value.toLowerCase());
+      return {
+        matched: !valueStr.toLowerCase().includes(criterion.value.toLowerCase()),
+        value: valueStr,
+      };
 
-    case "in_list":
+    case "contains_any": {
+      const keywords = criterion.value.split(",").map((v) => v.trim().toLowerCase());
+      const found = keywords.filter((keyword) =>
+        valueStr.toLowerCase().includes(keyword)
+      );
+      return {
+        matched: found.length > 0,
+        value: found.join(", "),
+      };
+    }
+
+    case "contains_all": {
+      const keywords = criterion.value.split(",").map((v) => v.trim().toLowerCase());
+      const allFound = keywords.every((keyword) =>
+        valueStr.toLowerCase().includes(keyword)
+      );
+      return {
+        matched: allFound,
+        value: valueStr,
+      };
+    }
+
+    case "in_list": {
       const listValues = criterion.value.split(",").map((v) => v.trim().toLowerCase());
-      return listValues.includes(String(fieldValue || "").toLowerCase());
+      return {
+        matched: listValues.includes(valueStr.toLowerCase()),
+        value: valueStr,
+      };
+    }
 
-    case "not_in_list":
+    case "not_in_list": {
       const excludeValues = criterion.value.split(",").map((v) => v.trim().toLowerCase());
-      return !excludeValues.includes(String(fieldValue || "").toLowerCase());
+      return {
+        matched: !excludeValues.includes(valueStr.toLowerCase()),
+        value: valueStr,
+      };
+    }
 
     case "regex":
       try {
         const regex = new RegExp(criterion.value, "i");
-        return regex.test(String(fieldValue || ""));
+        const match = valueStr.match(regex);
+        return {
+          matched: !!match,
+          value: match ? match[0] : valueStr,
+        };
       } catch {
-        return false;
+        return { matched: false, value: valueStr };
       }
 
     default:
-      return false;
+      return { matched: false, value: valueStr };
   }
 }
 
@@ -116,78 +118,52 @@ function evaluateField(
  */
 export function evaluateClient(
   client: Client,
-  criteria?: EvaluationCriteria[]
+  criteria: EvaluationCriteria[]
 ): EvaluationResult {
-  const activeCriteria = (criteria || DEFAULT_CRITERIA).filter((c) => c.isActive);
-  const matchedCriteria: EvaluationCriteria[] = [];
-  const notes: string[] = [];
-  let score = 0;
-  let maxPossibleScore = 0;
-  let action: EvaluationResult["action"] = "accept";
-  let referralReason: string | undefined;
+  const activeCriteria = criteria.filter((c) => c.isActive);
+  const flags: EvaluationFlag[] = [];
 
-  // Process required criteria first
-  const requiredCriteria = activeCriteria.filter((c) => c.type === "required");
-  for (const criterion of requiredCriteria) {
-    const passed = evaluateField(client, criterion);
-    if (passed) {
-      matchedCriteria.push(criterion);
-      notes.push(`✓ ${criterion.name}`);
-    } else {
-      notes.push(`✗ ${criterion.name} (required)`);
-      if (criterion.action === "reject" || criterion.action === "referral") {
-        action = "referral";
-        referralReason = criterion.name;
-      }
-    }
-  }
+  // Sort by priority (lower = first)
+  const sortedCriteria = [...activeCriteria].sort((a, b) => a.priority - b.priority);
 
-  // Process scoring criteria
-  const scoringCriteria = activeCriteria.filter((c) => c.type === "scoring");
-  for (const criterion of scoringCriteria) {
-    maxPossibleScore += criterion.weight;
-    const passed = evaluateField(client, criterion);
-    if (passed) {
-      score += criterion.weight;
-      matchedCriteria.push(criterion);
-      notes.push(`✓ ${criterion.name} (+${criterion.weight})`);
-    } else {
-      notes.push(`○ ${criterion.name} (not matched)`);
-    }
-  }
+  for (const criterion of sortedCriteria) {
+    const { matched, value } = evaluateField(client, criterion);
 
-  // Process referral criteria (keywords, specific conditions)
-  const referralCriteria = activeCriteria.filter((c) => c.type === "referral");
-  for (const criterion of referralCriteria) {
-    const triggered = evaluateField(client, criterion);
-    if (triggered) {
-      matchedCriteria.push(criterion);
-      notes.push(`⚠ ${criterion.name} - Referral triggered`);
-      action = "referral";
-      referralReason = criterion.name;
-    }
-  }
-
-  // Normalize score to 0-100
-  const normalizedScore = maxPossibleScore > 0
-    ? Math.round((score / maxPossibleScore) * 100)
-    : 100;
-
-  // Determine final action based on score if not already set to referral
-  if (action === "accept") {
-    if (normalizedScore < 40) {
-      action = "review";
-      notes.push("Low score - manual review recommended");
+    if (matched) {
+      flags.push({
+        criteriaId: criterion.id,
+        criteriaName: criterion.name,
+        field: criterion.field,
+        action: criterion.action,
+        matchedValue: value,
+        message: criterion.description || `Matched: ${criterion.name}`,
+      });
     }
   }
 
   return {
-    score: normalizedScore,
-    action,
-    notes,
-    matchedCriteria,
-    referralReason,
+    clientId: client.id,
+    flags,
+    hasUrgent: flags.some((f) => f.action === "flag_urgent"),
+    needsReview: flags.some((f) => f.action === "flag_review"),
+    evaluatedAt: new Date().toISOString(),
   };
+}
+
+/**
+ * Evaluate multiple clients
+ */
+export function evaluateClients(
+  clients: Client[],
+  criteria: EvaluationCriteria[]
+): Map<string, EvaluationResult> {
+  const results = new Map<string, EvaluationResult>();
+
+  for (const client of clients) {
+    results.set(client.id, evaluateClient(client, criteria));
+  }
+
+  return results;
 }
 
 /**

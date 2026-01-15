@@ -1,5 +1,5 @@
 import { google, sheets_v4 } from "googleapis";
-import { Client, Clinician, Communication, EmailTemplate } from "@/types/client";
+import { Client, Clinician, Communication, EmailTemplate, EvaluationCriteria } from "@/types/client";
 
 // Sheet names
 const SHEETS = {
@@ -21,6 +21,9 @@ function getGoogleSheetsClient(accessToken: string): sheets_v4.Sheets {
   return google.sheets({ version: "v4", auth });
 }
 
+// Maximum column range to support all fields (A-AZ = 52 columns)
+const MAX_COLUMN = "AZ";
+
 // Generic function to get all rows from a sheet
 async function getSheetData(
   sheets: sheets_v4.Sheets,
@@ -29,7 +32,7 @@ async function getSheetData(
 ): Promise<string[][]> {
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: `${sheetName}!A:Z`,
+    range: `${sheetName}!A:${MAX_COLUMN}`,
   });
 
   return response.data.values || [];
@@ -44,7 +47,7 @@ async function appendRow(
 ): Promise<void> {
   await sheets.spreadsheets.values.append({
     spreadsheetId,
-    range: `${sheetName}!A:Z`,
+    range: `${sheetName}!A:${MAX_COLUMN}`,
     valueInputOption: "USER_ENTERED",
     requestBody: {
       values: [values.map((v) => (v === null ? "" : String(v)))],
@@ -62,7 +65,7 @@ async function updateRow(
 ): Promise<void> {
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `${sheetName}!A${rowIndex}:Z${rowIndex}`,
+    range: `${sheetName}!A${rowIndex}:${MAX_COLUMN}${rowIndex}`,
     valueInputOption: "USER_ENTERED",
     requestBody: {
       values: [values.map((v) => (v === null ? "" : String(v)))],
@@ -428,5 +431,180 @@ export const auditLogApi = {
       entry.newValue || null,
       entry.ipAddress || null,
     ]);
+  },
+};
+
+// Evaluation Criteria API
+export const evaluationCriteriaApi = {
+  async getAll(accessToken: string): Promise<EvaluationCriteria[]> {
+    const sheets = getGoogleSheetsClient(accessToken);
+    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID!;
+
+    const data = await getSheetData(sheets, spreadsheetId, SHEETS.EVALUATION_CRITERIA);
+    if (data.length < 2) return [];
+
+    const headers = data[0];
+    return data.slice(1).map((row) => {
+      const criteria: Record<string, string> = {};
+      headers.forEach((header, index) => {
+        criteria[header] = row[index] || "";
+      });
+
+      return {
+        id: criteria.id,
+        name: criteria.name,
+        description: criteria.description || undefined,
+        field: criteria.field as keyof Client,
+        operator: criteria.operator as EvaluationCriteria["operator"],
+        value: criteria.value,
+        action: criteria.action as EvaluationCriteria["action"],
+        priority: parseInt(criteria.priority) || 0,
+        isActive: criteria.isActive === "true",
+        createdAt: criteria.createdAt,
+        updatedAt: criteria.updatedAt,
+      } as EvaluationCriteria;
+    }).sort((a, b) => a.priority - b.priority);
+  },
+
+  async create(
+    accessToken: string,
+    criteria: Omit<EvaluationCriteria, "id" | "createdAt" | "updatedAt">
+  ): Promise<EvaluationCriteria> {
+    const sheets = getGoogleSheetsClient(accessToken);
+    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID!;
+
+    const now = new Date().toISOString();
+    const newCriteria: EvaluationCriteria = {
+      ...criteria,
+      id: crypto.randomUUID(),
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await appendRow(sheets, spreadsheetId, SHEETS.EVALUATION_CRITERIA, [
+      newCriteria.id,
+      newCriteria.name,
+      newCriteria.description || null,
+      newCriteria.field,
+      newCriteria.operator,
+      newCriteria.value,
+      newCriteria.action,
+      newCriteria.priority.toString(),
+      newCriteria.isActive ? "true" : "false",
+      newCriteria.createdAt,
+      newCriteria.updatedAt,
+    ]);
+
+    return newCriteria;
+  },
+
+  async update(
+    accessToken: string,
+    id: string,
+    updates: Partial<EvaluationCriteria>
+  ): Promise<EvaluationCriteria | null> {
+    const sheets = getGoogleSheetsClient(accessToken);
+    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID!;
+
+    const data = await getSheetData(sheets, spreadsheetId, SHEETS.EVALUATION_CRITERIA);
+    if (data.length < 2) return null;
+
+    const headers = data[0];
+    const rowIndex = data.findIndex((row, i) => i > 0 && row[0] === id);
+
+    if (rowIndex === -1) return null;
+
+    const existing: Record<string, string> = {};
+    headers.forEach((header, index) => {
+      existing[header] = data[rowIndex][index] || "";
+    });
+
+    const existingCriteria: EvaluationCriteria = {
+      id: existing.id,
+      name: existing.name,
+      description: existing.description || undefined,
+      field: existing.field as keyof Client,
+      operator: existing.operator as EvaluationCriteria["operator"],
+      value: existing.value,
+      action: existing.action as EvaluationCriteria["action"],
+      priority: parseInt(existing.priority) || 0,
+      isActive: existing.isActive === "true",
+      createdAt: existing.createdAt,
+      updatedAt: existing.updatedAt,
+    };
+
+    const updatedCriteria: EvaluationCriteria = {
+      ...existingCriteria,
+      ...updates,
+      id: existingCriteria.id,
+      createdAt: existingCriteria.createdAt,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await updateRow(
+      sheets,
+      spreadsheetId,
+      SHEETS.EVALUATION_CRITERIA,
+      rowIndex + 1,
+      [
+        updatedCriteria.id,
+        updatedCriteria.name,
+        updatedCriteria.description || null,
+        updatedCriteria.field,
+        updatedCriteria.operator,
+        updatedCriteria.value,
+        updatedCriteria.action,
+        updatedCriteria.priority.toString(),
+        updatedCriteria.isActive ? "true" : "false",
+        updatedCriteria.createdAt,
+        updatedCriteria.updatedAt,
+      ]
+    );
+
+    return updatedCriteria;
+  },
+
+  async delete(accessToken: string, id: string): Promise<boolean> {
+    const sheets = getGoogleSheetsClient(accessToken);
+    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID!;
+
+    const data = await getSheetData(sheets, spreadsheetId, SHEETS.EVALUATION_CRITERIA);
+    if (data.length < 2) return false;
+
+    const rowIndex = data.findIndex((row, i) => i > 0 && row[0] === id);
+    if (rowIndex === -1) return false;
+
+    // Get the sheet ID for batch update
+    const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
+    const sheet = spreadsheet.data.sheets?.find(
+      (s) => s.properties?.title === SHEETS.EVALUATION_CRITERIA
+    );
+
+    if (!sheet?.properties?.sheetId) return false;
+
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            deleteDimension: {
+              range: {
+                sheetId: sheet.properties.sheetId,
+                dimension: "ROWS",
+                startIndex: rowIndex,
+                endIndex: rowIndex + 1,
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    return true;
+  },
+
+  async getActive(accessToken: string): Promise<EvaluationCriteria[]> {
+    const all = await this.getAll(accessToken);
+    return all.filter((c) => c.isActive);
   },
 };
