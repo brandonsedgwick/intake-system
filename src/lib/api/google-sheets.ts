@@ -1,5 +1,5 @@
 import { google, sheets_v4 } from "googleapis";
-import { Client, Clinician, Communication, EmailTemplate, EvaluationCriteria, TextEvaluationRule } from "@/types/client";
+import { Client, Clinician, Communication, EmailTemplate, EvaluationCriteria, TextEvaluationRule, ReferralClinic, ReferralClinicCustomField, ReferralClinicsConfig } from "@/types/client";
 
 // Sheet names
 const SHEETS = {
@@ -11,6 +11,8 @@ const SHEETS = {
   AUDIT_LOG: "AuditLog",
   EVALUATION_CRITERIA: "EvaluationCriteria",
   TEXT_EVALUATION_RULES: "TextEvaluationRules",
+  REFERRAL_CLINICS: "ReferralClinics",
+  REFERRAL_CLINICS_CONFIG: "ReferralClinicsConfig",
   SETTINGS: "Settings",
 } as const;
 
@@ -838,5 +840,266 @@ export const textEvaluationRulesApi = {
     });
 
     return true;
+  },
+};
+
+// Referral Clinics API
+export const referralClinicsApi = {
+  async getAll(accessToken: string): Promise<ReferralClinic[]> {
+    const sheets = getGoogleSheetsClient(accessToken);
+    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID!;
+
+    try {
+      const data = await getSheetData(sheets, spreadsheetId, SHEETS.REFERRAL_CLINICS);
+      if (data.length < 2) return [];
+
+      const headers = data[0];
+      return data.slice(1).map((row) => {
+        const clinic: Record<string, string> = {};
+        headers.forEach((header, index) => {
+          clinic[header] = row[index] || "";
+        });
+
+        return {
+          id: clinic.id,
+          practiceName: clinic.practiceName,
+          address: clinic.address || undefined,
+          phone: clinic.phone || undefined,
+          email: clinic.email || undefined,
+          specialties: clinic.specialties ? JSON.parse(clinic.specialties) : [],
+          notes: clinic.notes || undefined,
+          customFields: clinic.customFields ? JSON.parse(clinic.customFields) : undefined,
+          isActive: clinic.isActive === "true",
+          createdAt: clinic.createdAt,
+          updatedAt: clinic.updatedAt,
+        } as ReferralClinic;
+      });
+    } catch {
+      // Sheet might not exist yet
+      return [];
+    }
+  },
+
+  async getActive(accessToken: string): Promise<ReferralClinic[]> {
+    const all = await this.getAll(accessToken);
+    return all.filter((c) => c.isActive);
+  },
+
+  async getById(accessToken: string, id: string): Promise<ReferralClinic | null> {
+    const clinics = await this.getAll(accessToken);
+    return clinics.find((c) => c.id === id) || null;
+  },
+
+  async create(
+    accessToken: string,
+    clinic: Omit<ReferralClinic, "id" | "createdAt" | "updatedAt">
+  ): Promise<ReferralClinic> {
+    const sheets = getGoogleSheetsClient(accessToken);
+    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID!;
+
+    const now = new Date().toISOString();
+    const newClinic: ReferralClinic = {
+      ...clinic,
+      id: crypto.randomUUID(),
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await appendRow(sheets, spreadsheetId, SHEETS.REFERRAL_CLINICS, [
+      newClinic.id,
+      newClinic.practiceName,
+      newClinic.address || null,
+      newClinic.phone || null,
+      newClinic.email || null,
+      JSON.stringify(newClinic.specialties),
+      newClinic.notes || null,
+      newClinic.customFields ? JSON.stringify(newClinic.customFields) : null,
+      newClinic.isActive ? "true" : "false",
+      newClinic.createdAt,
+      newClinic.updatedAt,
+    ]);
+
+    return newClinic;
+  },
+
+  async update(
+    accessToken: string,
+    id: string,
+    updates: Partial<ReferralClinic>
+  ): Promise<ReferralClinic | null> {
+    const sheets = getGoogleSheetsClient(accessToken);
+    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID!;
+
+    const data = await getSheetData(sheets, spreadsheetId, SHEETS.REFERRAL_CLINICS);
+    if (data.length < 2) return null;
+
+    const headers = data[0];
+    const rowIndex = data.findIndex((row, i) => i > 0 && row[0] === id);
+
+    if (rowIndex === -1) return null;
+
+    const existing: Record<string, string> = {};
+    headers.forEach((header, index) => {
+      existing[header] = data[rowIndex][index] || "";
+    });
+
+    const existingClinic: ReferralClinic = {
+      id: existing.id,
+      practiceName: existing.practiceName,
+      address: existing.address || undefined,
+      phone: existing.phone || undefined,
+      email: existing.email || undefined,
+      specialties: existing.specialties ? JSON.parse(existing.specialties) : [],
+      notes: existing.notes || undefined,
+      customFields: existing.customFields ? JSON.parse(existing.customFields) : undefined,
+      isActive: existing.isActive === "true",
+      createdAt: existing.createdAt,
+      updatedAt: existing.updatedAt,
+    };
+
+    const updatedClinic: ReferralClinic = {
+      ...existingClinic,
+      ...updates,
+      id: existingClinic.id,
+      createdAt: existingClinic.createdAt,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await updateRow(
+      sheets,
+      spreadsheetId,
+      SHEETS.REFERRAL_CLINICS,
+      rowIndex + 1,
+      [
+        updatedClinic.id,
+        updatedClinic.practiceName,
+        updatedClinic.address || null,
+        updatedClinic.phone || null,
+        updatedClinic.email || null,
+        JSON.stringify(updatedClinic.specialties),
+        updatedClinic.notes || null,
+        updatedClinic.customFields ? JSON.stringify(updatedClinic.customFields) : null,
+        updatedClinic.isActive ? "true" : "false",
+        updatedClinic.createdAt,
+        updatedClinic.updatedAt,
+      ]
+    );
+
+    return updatedClinic;
+  },
+
+  async delete(accessToken: string, id: string): Promise<boolean> {
+    const sheets = getGoogleSheetsClient(accessToken);
+    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID!;
+
+    const data = await getSheetData(sheets, spreadsheetId, SHEETS.REFERRAL_CLINICS);
+    if (data.length < 2) return false;
+
+    const rowIndex = data.findIndex((row, i) => i > 0 && row[0] === id);
+    if (rowIndex === -1) return false;
+
+    // Get the sheet ID for batch update
+    const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
+    const sheet = spreadsheet.data.sheets?.find(
+      (s) => s.properties?.title === SHEETS.REFERRAL_CLINICS
+    );
+
+    if (!sheet?.properties?.sheetId) return false;
+
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            deleteDimension: {
+              range: {
+                sheetId: sheet.properties.sheetId,
+                dimension: "ROWS",
+                startIndex: rowIndex,
+                endIndex: rowIndex + 1,
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    return true;
+  },
+};
+
+// Referral Clinics Config API (for custom fields)
+export const referralClinicsConfigApi = {
+  async getConfig(accessToken: string): Promise<ReferralClinicsConfig> {
+    const sheets = getGoogleSheetsClient(accessToken);
+    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID!;
+
+    try {
+      const data = await getSheetData(sheets, spreadsheetId, SHEETS.REFERRAL_CLINICS_CONFIG);
+      if (data.length < 2) {
+        return { customFields: [], updatedAt: new Date().toISOString() };
+      }
+
+      // Config sheet has 2 columns: key and value (JSON)
+      const config: Record<string, string> = {};
+      for (let i = 1; i < data.length; i++) {
+        const [key, value] = data[i];
+        if (key) {
+          config[key] = value || "";
+        }
+      }
+
+      return {
+        customFields: config.customFields ? JSON.parse(config.customFields) : [],
+        updatedAt: config.updatedAt || new Date().toISOString(),
+      };
+    } catch {
+      return { customFields: [], updatedAt: new Date().toISOString() };
+    }
+  },
+
+  async saveCustomFields(
+    accessToken: string,
+    customFields: ReferralClinicCustomField[]
+  ): Promise<ReferralClinicsConfig> {
+    const sheets = getGoogleSheetsClient(accessToken);
+    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID!;
+
+    const now = new Date().toISOString();
+
+    // Clear existing data and write new config
+    const data = await getSheetData(sheets, spreadsheetId, SHEETS.REFERRAL_CLINICS_CONFIG);
+
+    if (data.length < 2) {
+      // Append new rows
+      await appendRow(sheets, spreadsheetId, SHEETS.REFERRAL_CLINICS_CONFIG, [
+        "customFields",
+        JSON.stringify(customFields),
+      ]);
+      await appendRow(sheets, spreadsheetId, SHEETS.REFERRAL_CLINICS_CONFIG, [
+        "updatedAt",
+        now,
+      ]);
+    } else {
+      // Update existing rows
+      await updateRow(sheets, spreadsheetId, SHEETS.REFERRAL_CLINICS_CONFIG, 2, [
+        "customFields",
+        JSON.stringify(customFields),
+      ]);
+
+      if (data.length >= 3) {
+        await updateRow(sheets, spreadsheetId, SHEETS.REFERRAL_CLINICS_CONFIG, 3, [
+          "updatedAt",
+          now,
+        ]);
+      } else {
+        await appendRow(sheets, spreadsheetId, SHEETS.REFERRAL_CLINICS_CONFIG, [
+          "updatedAt",
+          now,
+        ]);
+      }
+    }
+
+    return { customFields, updatedAt: now };
   },
 };

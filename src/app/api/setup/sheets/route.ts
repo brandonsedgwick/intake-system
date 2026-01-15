@@ -125,6 +125,20 @@ const SHEET_CONFIGS = {
     "order",
     "isActive",
   ],
+  ReferralClinics: [
+    "id",
+    "practiceName",
+    "address",
+    "phone",
+    "email",
+    "specialties",
+    "notes",
+    "customFields",
+    "isActive",
+    "createdAt",
+    "updatedAt",
+  ],
+  ReferralClinicsConfig: ["key", "value"],
 };
 
 // Default email templates

@@ -246,3 +246,37 @@ export interface TextEvaluationRule {
   createdAt: string;
   updatedAt: string;
 }
+
+// ============================================
+// Referral Clinic Types
+// ============================================
+
+// Custom field definition for referral clinics
+export interface ReferralClinicCustomField {
+  id: string;
+  name: string;            // Field key (e.g., "faxNumber")
+  label: string;           // Display label (e.g., "Fax Number")
+  type: "text" | "email" | "phone" | "url" | "textarea";
+  order: number;
+}
+
+// Referral clinic entity
+export interface ReferralClinic {
+  id: string;
+  practiceName: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  specialties: string[];   // Array of specialties
+  notes?: string;          // Additional notes about the clinic
+  customFields?: Record<string, string>;  // Dynamic custom field values
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Configuration for custom fields in referral clinics
+export interface ReferralClinicsConfig {
+  customFields: ReferralClinicCustomField[];
+  updatedAt: string;
+}

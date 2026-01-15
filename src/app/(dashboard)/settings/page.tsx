@@ -24,10 +24,12 @@ import {
   GripVertical,
   Save,
   ClipboardCheck,
+  Building2,
 } from "lucide-react";
 import { EvaluationConfig } from "@/components/settings/evaluation-config";
+import { ReferralClinicsConfig } from "@/components/settings/referral-clinics-config";
 
-type SettingsTab = "general" | "sheets" | "followups" | "intake-fields" | "evaluation";
+type SettingsTab = "general" | "sheets" | "followups" | "intake-fields" | "evaluation" | "referral-clinics";
 
 function GeneralSettings() {
   const { data: settings, isLoading } = useSettings();
@@ -612,6 +614,7 @@ export default function SettingsPage() {
     { id: "followups" as const, label: "Follow-ups", icon: Clock },
     { id: "intake-fields" as const, label: "Intake Fields", icon: FileText },
     { id: "evaluation" as const, label: "Evaluation", icon: ClipboardCheck },
+    { id: "referral-clinics" as const, label: "Referral Clinics", icon: Building2 },
   ];
 
   return (
@@ -654,6 +657,7 @@ export default function SettingsPage() {
           {activeTab === "followups" && <FollowUpSettings />}
           {activeTab === "intake-fields" && <IntakeFieldsSettings />}
           {activeTab === "evaluation" && <EvaluationConfig />}
+          {activeTab === "referral-clinics" && <ReferralClinicsConfig />}
         </div>
       </div>
     </div>
