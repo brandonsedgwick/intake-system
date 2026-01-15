@@ -1,5 +1,5 @@
 import { google, sheets_v4 } from "googleapis";
-import { Client, Clinician, Communication, EmailTemplate, EvaluationCriteria } from "@/types/client";
+import { Client, Clinician, Communication, EmailTemplate, EvaluationCriteria, TextEvaluationRule } from "@/types/client";
 
 // Sheet names
 const SHEETS = {
@@ -10,6 +10,7 @@ const SHEETS = {
   EMAIL_TEMPLATES: "EmailTemplates",
   AUDIT_LOG: "AuditLog",
   EVALUATION_CRITERIA: "EvaluationCriteria",
+  TEXT_EVALUATION_RULES: "TextEvaluationRules",
   SETTINGS: "Settings",
 } as const;
 
@@ -606,5 +607,236 @@ export const evaluationCriteriaApi = {
   async getActive(accessToken: string): Promise<EvaluationCriteria[]> {
     const all = await this.getAll(accessToken);
     return all.filter((c) => c.isActive);
+  },
+};
+
+// Settings API
+export const settingsApi = {
+  async getAll(accessToken: string): Promise<Record<string, string>> {
+    const sheets = getGoogleSheetsClient(accessToken);
+    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID!;
+
+    try {
+      const data = await getSheetData(sheets, spreadsheetId, SHEETS.SETTINGS);
+      if (data.length < 2) return {};
+
+      // Convert rows to key-value object
+      const settings: Record<string, string> = {};
+      for (let i = 1; i < data.length; i++) {
+        const [key, value] = data[i];
+        if (key) {
+          settings[key] = value || "";
+        }
+      }
+
+      return settings;
+    } catch {
+      // Settings sheet might not exist yet
+      return {};
+    }
+  },
+
+  async get(accessToken: string, key: string): Promise<string | undefined> {
+    const settings = await this.getAll(accessToken);
+    return settings[key];
+  },
+
+  async getLLMSettings(accessToken: string): Promise<{
+    textEvaluationLLMEnabled?: string;
+    textEvaluationLLMThreshold?: string;
+    googleCloudProject?: string;
+    vertexAILocation?: string;
+  }> {
+    const settings = await this.getAll(accessToken);
+    return {
+      textEvaluationLLMEnabled: settings.textEvaluationLLMEnabled,
+      textEvaluationLLMThreshold: settings.textEvaluationLLMThreshold,
+      googleCloudProject: settings.googleCloudProject,
+      vertexAILocation: settings.vertexAILocation,
+    };
+  },
+};
+
+// Text Evaluation Rules API
+export const textEvaluationRulesApi = {
+  async getAll(accessToken: string): Promise<TextEvaluationRule[]> {
+    const sheets = getGoogleSheetsClient(accessToken);
+    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID!;
+
+    try {
+      const data = await getSheetData(sheets, spreadsheetId, SHEETS.TEXT_EVALUATION_RULES);
+      if (data.length < 2) return [];
+
+      const headers = data[0];
+      return data.slice(1).map((row) => {
+        const rule: Record<string, string> = {};
+        headers.forEach((header, index) => {
+          rule[header] = row[index] || "";
+        });
+
+        return {
+          id: rule.id,
+          name: rule.name,
+          category: rule.category as TextEvaluationRule["category"],
+          severity: rule.severity as TextEvaluationRule["severity"],
+          patterns: rule.patterns ? JSON.parse(rule.patterns) : [],
+          isRegex: rule.isRegex === "true",
+          negationWords: rule.negationWords ? JSON.parse(rule.negationWords) : [],
+          negationWindow: parseInt(rule.negationWindow) || 5,
+          requiresLLM: rule.requiresLLM === "true",
+          isActive: rule.isActive === "true",
+          createdAt: rule.createdAt,
+          updatedAt: rule.updatedAt,
+        } as TextEvaluationRule;
+      });
+    } catch {
+      // Sheet might not exist yet
+      return [];
+    }
+  },
+
+  async getActive(accessToken: string): Promise<TextEvaluationRule[]> {
+    const all = await this.getAll(accessToken);
+    return all.filter((r) => r.isActive);
+  },
+
+  async create(
+    accessToken: string,
+    rule: Omit<TextEvaluationRule, "id" | "createdAt" | "updatedAt">
+  ): Promise<TextEvaluationRule> {
+    const sheets = getGoogleSheetsClient(accessToken);
+    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID!;
+
+    const now = new Date().toISOString();
+    const newRule: TextEvaluationRule = {
+      ...rule,
+      id: crypto.randomUUID(),
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await appendRow(sheets, spreadsheetId, SHEETS.TEXT_EVALUATION_RULES, [
+      newRule.id,
+      newRule.name,
+      newRule.category,
+      newRule.severity,
+      JSON.stringify(newRule.patterns),
+      newRule.isRegex ? "true" : "false",
+      JSON.stringify(newRule.negationWords),
+      newRule.negationWindow.toString(),
+      newRule.requiresLLM ? "true" : "false",
+      newRule.isActive ? "true" : "false",
+      newRule.createdAt,
+      newRule.updatedAt,
+    ]);
+
+    return newRule;
+  },
+
+  async update(
+    accessToken: string,
+    id: string,
+    updates: Partial<TextEvaluationRule>
+  ): Promise<TextEvaluationRule | null> {
+    const sheets = getGoogleSheetsClient(accessToken);
+    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID!;
+
+    const data = await getSheetData(sheets, spreadsheetId, SHEETS.TEXT_EVALUATION_RULES);
+    if (data.length < 2) return null;
+
+    const headers = data[0];
+    const rowIndex = data.findIndex((row, i) => i > 0 && row[0] === id);
+
+    if (rowIndex === -1) return null;
+
+    const existing: Record<string, string> = {};
+    headers.forEach((header, index) => {
+      existing[header] = data[rowIndex][index] || "";
+    });
+
+    const existingRule: TextEvaluationRule = {
+      id: existing.id,
+      name: existing.name,
+      category: existing.category as TextEvaluationRule["category"],
+      severity: existing.severity as TextEvaluationRule["severity"],
+      patterns: existing.patterns ? JSON.parse(existing.patterns) : [],
+      isRegex: existing.isRegex === "true",
+      negationWords: existing.negationWords ? JSON.parse(existing.negationWords) : [],
+      negationWindow: parseInt(existing.negationWindow) || 5,
+      requiresLLM: existing.requiresLLM === "true",
+      isActive: existing.isActive === "true",
+      createdAt: existing.createdAt,
+      updatedAt: existing.updatedAt,
+    };
+
+    const updatedRule: TextEvaluationRule = {
+      ...existingRule,
+      ...updates,
+      id: existingRule.id,
+      createdAt: existingRule.createdAt,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await updateRow(
+      sheets,
+      spreadsheetId,
+      SHEETS.TEXT_EVALUATION_RULES,
+      rowIndex + 1,
+      [
+        updatedRule.id,
+        updatedRule.name,
+        updatedRule.category,
+        updatedRule.severity,
+        JSON.stringify(updatedRule.patterns),
+        updatedRule.isRegex ? "true" : "false",
+        JSON.stringify(updatedRule.negationWords),
+        updatedRule.negationWindow.toString(),
+        updatedRule.requiresLLM ? "true" : "false",
+        updatedRule.isActive ? "true" : "false",
+        updatedRule.createdAt,
+        updatedRule.updatedAt,
+      ]
+    );
+
+    return updatedRule;
+  },
+
+  async delete(accessToken: string, id: string): Promise<boolean> {
+    const sheets = getGoogleSheetsClient(accessToken);
+    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID!;
+
+    const data = await getSheetData(sheets, spreadsheetId, SHEETS.TEXT_EVALUATION_RULES);
+    if (data.length < 2) return false;
+
+    const rowIndex = data.findIndex((row, i) => i > 0 && row[0] === id);
+    if (rowIndex === -1) return false;
+
+    // Get the sheet ID for batch update
+    const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
+    const sheet = spreadsheet.data.sheets?.find(
+      (s) => s.properties?.title === SHEETS.TEXT_EVALUATION_RULES
+    );
+
+    if (!sheet?.properties?.sheetId) return false;
+
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            deleteDimension: {
+              range: {
+                sheetId: sheet.properties.sheetId,
+                dimension: "ROWS",
+                startIndex: rowIndex,
+                endIndex: rowIndex + 1,
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    return true;
   },
 };

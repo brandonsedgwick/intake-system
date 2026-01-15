@@ -57,6 +57,7 @@ export interface Client {
   referralReason?: string;
   isDuplicate?: boolean;
   duplicateOfClientId?: string;
+  textEvaluationResult?: string; // JSON string of TextEvaluationResult
 
   // Communication Tracking
   initialOutreachDate?: string;
@@ -187,4 +188,61 @@ export interface FormFieldMapping {
   formColumnName: string;
   clientField: keyof Client;
   transform?: "none" | "lowercase" | "trim" | "parse_json";
+}
+
+// ============================================
+// Text Evaluation Types (Hybrid Pattern + LLM)
+// ============================================
+
+// Categories for text evaluation flags
+export type TextEvaluationCategory =
+  | "suicidal_ideation"
+  | "self_harm"
+  | "substance_use"
+  | "psychosis"
+  | "eating_disorder"
+  | "hospitalization"
+  | "violence"
+  | "abuse"
+  | "custom";
+
+// Severity levels for flags
+export type TextEvaluationSeverity = "none" | "low" | "medium" | "high" | "urgent";
+
+// Individual flag from text evaluation
+export interface TextEvaluationFlag {
+  category: TextEvaluationCategory;
+  severity: TextEvaluationSeverity;
+  matchedText: string;        // The text that triggered the flag
+  context: string;            // Surrounding sentence(s) for review
+  reasoning?: string;         // LLM explanation (if used)
+  ruleId?: string;            // Pattern rule ID (if pattern-matched)
+}
+
+// Full text evaluation result
+export interface TextEvaluationResult {
+  method: "pattern" | "llm" | "hybrid";
+  flags: TextEvaluationFlag[];
+  overallSeverity: TextEvaluationSeverity;
+  llmUsed: boolean;
+  llmModel?: string;
+  llmTokensUsed?: number;
+  evaluatedAt: string;
+  rawResponse?: string;       // For debugging/audit
+}
+
+// Pattern rule configuration (admin-configurable)
+export interface TextEvaluationRule {
+  id: string;
+  name: string;
+  category: TextEvaluationCategory;
+  severity: TextEvaluationSeverity;
+  patterns: string[];         // Keywords or regex patterns
+  isRegex: boolean;
+  negationWords: string[];    // Words that negate the match
+  negationWindow: number;     // How many words before to check for negations
+  requiresLLM: boolean;       // Force LLM review when matched
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
 }

@@ -2,7 +2,7 @@
 
 import { use, useState } from "react";
 import { useClient, useClientCommunications, useUpdateClient } from "@/hooks/use-clients";
-import { ClientStatus, EmailTemplate } from "@/types/client";
+import { ClientStatus, EmailTemplate, TextEvaluationResult, TextEvaluationSeverity, TextEvaluationCategory } from "@/types/client";
 import { formatDateTime, formatDate } from "@/lib/utils";
 import { EmailPreviewModal } from "@/components/emails/email-preview-modal";
 import Link from "next/link";
@@ -23,6 +23,31 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
 } from "lucide-react";
+
+// Severity badge colors for text evaluation
+const SEVERITY_CONFIG: Record<
+  TextEvaluationSeverity,
+  { label: string; color: string; bgColor: string; borderColor: string }
+> = {
+  none: { label: "None", color: "text-gray-600", bgColor: "bg-gray-100", borderColor: "border-gray-200" },
+  low: { label: "Low", color: "text-blue-700", bgColor: "bg-blue-100", borderColor: "border-blue-200" },
+  medium: { label: "Medium", color: "text-yellow-700", bgColor: "bg-yellow-100", borderColor: "border-yellow-200" },
+  high: { label: "High", color: "text-orange-700", bgColor: "bg-orange-100", borderColor: "border-orange-200" },
+  urgent: { label: "Urgent", color: "text-red-700", bgColor: "bg-red-100", borderColor: "border-red-200" },
+};
+
+// Category labels for text evaluation
+const CATEGORY_LABELS: Record<TextEvaluationCategory, string> = {
+  suicidal_ideation: "Suicidal Ideation",
+  self_harm: "Self-Harm",
+  substance_use: "Substance Use",
+  psychosis: "Psychosis",
+  eating_disorder: "Eating Disorder",
+  hospitalization: "Hospitalization",
+  violence: "Violence/Safety",
+  abuse: "Abuse/Trauma",
+  custom: "Custom",
+};
 
 const STATUS_CONFIG: Record<
   ClientStatus,
@@ -93,6 +118,16 @@ export default function ClientDetailPage({ params }: PageProps) {
   }
 
   const statusConfig = STATUS_CONFIG[client.status] || STATUS_CONFIG.new;
+
+  // Parse text evaluation result if available
+  let textEvalResult: TextEvaluationResult | null = null;
+  if (client.textEvaluationResult) {
+    try {
+      textEvalResult = JSON.parse(client.textEvaluationResult);
+    } catch {
+      // Invalid JSON stored
+    }
+  }
 
   // Action buttons based on status
   const getActionButtons = () => {
@@ -387,6 +422,76 @@ export default function ClientDetailPage({ params }: PageProps) {
                 <div className="mt-3">
                   <div className="text-sm text-gray-500 mb-1">Additional Notes</div>
                   <p className="text-gray-700 text-sm whitespace-pre-wrap">{client.evaluationNotes}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Text Evaluation Results */}
+          {textEvalResult && textEvalResult.flags.length > 0 && (
+            <div className="bg-white rounded-lg shadow p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Text Analysis Results
+                </h2>
+                <div className="flex items-center gap-2">
+                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${SEVERITY_CONFIG[textEvalResult.overallSeverity].bgColor} ${SEVERITY_CONFIG[textEvalResult.overallSeverity].color}`}>
+                    {SEVERITY_CONFIG[textEvalResult.overallSeverity].label}
+                  </span>
+                  <span className="text-xs text-gray-500 capitalize">
+                    ({textEvalResult.method})
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {textEvalResult.flags.map((flag, idx) => {
+                  const severityConfig = SEVERITY_CONFIG[flag.severity];
+                  const categoryLabel = CATEGORY_LABELS[flag.category] || flag.category;
+
+                  return (
+                    <div
+                      key={idx}
+                      className={`p-3 rounded-lg border ${severityConfig.borderColor} ${severityConfig.bgColor}`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className={`font-medium ${severityConfig.color}`}>
+                          {categoryLabel}
+                        </span>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${severityConfig.bgColor} ${severityConfig.color} border ${severityConfig.borderColor}`}>
+                          {severityConfig.label}
+                        </span>
+                      </div>
+
+                      <div className="text-sm text-gray-700 mb-1">
+                        <span className="text-gray-500">Matched: </span>
+                        <span className="font-medium">"{flag.matchedText}"</span>
+                      </div>
+
+                      {flag.context && flag.context !== flag.matchedText && (
+                        <div className="text-sm text-gray-600 italic mt-1">
+                          Context: "{flag.context}"
+                        </div>
+                      )}
+
+                      {flag.reasoning && (
+                        <div className="text-sm text-gray-600 mt-2 pt-2 border-t border-gray-200">
+                          <span className="text-gray-500">AI Reasoning: </span>
+                          {flag.reasoning}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {textEvalResult.llmUsed && (
+                <div className="mt-4 pt-3 border-t text-xs text-gray-500 flex items-center justify-between">
+                  <span>
+                    Analyzed with {textEvalResult.llmModel || "LLM"}
+                    {textEvalResult.llmTokensUsed && ` (${textEvalResult.llmTokensUsed} tokens)`}
+                  </span>
+                  <span>{new Date(textEvalResult.evaluatedAt).toLocaleString()}</span>
                 </div>
               )}
             </div>
