@@ -1,12 +1,15 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useCallback } from "react";
 import Link from "next/link";
-import { ClipboardCheck, Loader2, CheckCircle, AlertCircle } from "lucide-react";
-import { useClients, useEvaluateClient } from "@/hooks/use-clients";
+import { useRouter } from "next/navigation";
+import { ClipboardCheck, Loader2, CheckCircle, AlertCircle, Mail, Users, Calendar, AlertTriangle, ArrowRight } from "lucide-react";
+import { useClients, useEvaluateClient, useUpdateClient } from "@/hooks/use-clients";
 import { Client, ClientStatus } from "@/types/client";
 import { formatRelativeTime } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
+import { ClientPreviewModal } from "@/components/clients/client-preview-modal";
+import { ClientActionButtons } from "@/components/clients/client-action-buttons";
 
 interface EvaluationProgress {
   total: number;
@@ -14,6 +17,32 @@ interface EvaluationProgress {
   current: string | null;
   results: { clientId: string; clientName: string; status: "success" | "error" | "flagged"; message?: string }[];
 }
+
+interface BulkActionProgress {
+  total: number;
+  completed: number;
+  current: string | null;
+  actionType: "outreach" | "referral" | "scheduling";
+  results: { clientId: string; clientName: string; status: "success" | "error"; message?: string }[];
+}
+
+// Statuses that indicate evaluation has been performed
+const EVALUATED_STATUSES: ClientStatus[] = [
+  "evaluation_complete",
+  "evaluation_flagged",
+  "pending_outreach",
+  "outreach_sent",
+  "follow_up_1",
+  "follow_up_2",
+  "replied",
+  "ready_to_schedule",
+  "scheduled",
+  "completed",
+  "pending_referral",
+  "referred",
+  "closed_no_contact",
+  "closed_other",
+];
 
 const statusConfig: Record<
   ClientStatus,
@@ -137,11 +166,53 @@ function needsAction(client: Client): boolean {
 }
 
 export function PendingActionsTable() {
+  const router = useRouter();
   const { data: clients, isLoading, refetch } = useClients();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [evaluationProgress, setEvaluationProgress] = useState<EvaluationProgress | null>(null);
+  const [bulkActionProgress, setBulkActionProgress] = useState<BulkActionProgress | null>(null);
   const evaluateClient = useEvaluateClient();
+  const updateClient = useUpdateClient();
   const { addToast, updateToast } = useToast();
+
+  // Preview modal state
+  const [previewClientId, setPreviewClientId] = useState<string | null>(null);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
+  // Bulk action confirmation modal state
+  const [showBulkConfirmation, setShowBulkConfirmation] = useState(false);
+  const [pendingBulkAction, setPendingBulkAction] = useState<{
+    type: "outreach" | "referral" | "scheduling";
+    targetStatus: ClientStatus;
+    unevaluatedClients: Client[];
+  } | null>(null);
+
+  // Click tracking for single vs double click
+  const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const DOUBLE_CLICK_DELAY = 300; // ms
+
+  // Handle view button click - single click opens preview, double click navigates
+  const handleViewClick = useCallback((clientId: string) => {
+    if (clickTimeoutRef.current) {
+      // Double click detected - navigate to full page
+      clearTimeout(clickTimeoutRef.current);
+      clickTimeoutRef.current = null;
+      router.push(`/clients/${clientId}`);
+    } else {
+      // First click - set timeout to detect if it's a single click
+      clickTimeoutRef.current = setTimeout(() => {
+        // Single click - open preview modal
+        setPreviewClientId(clientId);
+        setIsPreviewOpen(true);
+        clickTimeoutRef.current = null;
+      }, DOUBLE_CLICK_DELAY);
+    }
+  }, [router]);
+
+  const handleClosePreview = useCallback(() => {
+    setIsPreviewOpen(false);
+    setPreviewClientId(null);
+  }, []);
 
   // Filter to actionable clients and sort by status priority
   const pendingClients = useMemo(() => {
@@ -285,6 +356,145 @@ export function PendingActionsTable() {
     }, 2000);
   };
 
+  // Handle bulk move action
+  const handleBulkAction = (
+    actionType: "outreach" | "referral" | "scheduling",
+    targetStatus: ClientStatus
+  ) => {
+    const selectedClients = pendingClients?.filter(c => selectedIds.has(c.id)) || [];
+    if (selectedClients.length === 0) return;
+
+    // Check for unevaluated clients
+    const unevaluatedClients = selectedClients.filter(
+      c => !EVALUATED_STATUSES.includes(c.status)
+    );
+
+    if (unevaluatedClients.length > 0) {
+      // Show confirmation modal
+      setPendingBulkAction({ type: actionType, targetStatus, unevaluatedClients });
+      setShowBulkConfirmation(true);
+      return;
+    }
+
+    // All clients are evaluated, proceed directly
+    executeBulkAction(selectedClients, actionType, targetStatus);
+  };
+
+  // Execute bulk action
+  const executeBulkAction = async (
+    clientsToMove: Client[],
+    actionType: "outreach" | "referral" | "scheduling",
+    targetStatus: ClientStatus
+  ) => {
+    const actionLabels = {
+      outreach: "Outreach",
+      referral: "Referrals",
+      scheduling: "Scheduling",
+    };
+
+    // Show loading toast
+    const toastId = addToast({
+      type: "loading",
+      title: `Moving to ${actionLabels[actionType]}...`,
+      message: `Processing ${clientsToMove.length} client${clientsToMove.length === 1 ? "" : "s"}`,
+    });
+
+    // Initialize progress
+    setBulkActionProgress({
+      total: clientsToMove.length,
+      completed: 0,
+      current: clientsToMove[0].firstName + " " + clientsToMove[0].lastName,
+      actionType,
+      results: [],
+    });
+
+    const results: BulkActionProgress["results"] = [];
+
+    // Process each client sequentially
+    for (let i = 0; i < clientsToMove.length; i++) {
+      const client = clientsToMove[i];
+      const clientName = `${client.firstName} ${client.lastName}`;
+
+      setBulkActionProgress(prev => prev ? {
+        ...prev,
+        current: clientName,
+        completed: i,
+      } : null);
+
+      try {
+        await updateClient.mutateAsync({
+          id: client.id,
+          data: { status: targetStatus },
+        });
+
+        results.push({
+          clientId: client.id,
+          clientName,
+          status: "success",
+          message: `Moved to ${actionLabels[actionType]}`,
+        });
+      } catch (error) {
+        results.push({
+          clientId: client.id,
+          clientName,
+          status: "error",
+          message: error instanceof Error ? error.message : "Failed to update",
+        });
+      }
+    }
+
+    // Update final progress
+    setBulkActionProgress(prev => prev ? {
+      ...prev,
+      completed: clientsToMove.length,
+      current: null,
+      results,
+    } : null);
+
+    // Count results
+    const successCount = results.filter(r => r.status === "success").length;
+    const errorCount = results.filter(r => r.status === "error").length;
+
+    // Update toast with final result
+    if (errorCount > 0) {
+      updateToast(toastId, {
+        type: "warning",
+        title: "Bulk action completed with errors",
+        message: `${successCount} moved, ${errorCount} failed`,
+      });
+    } else {
+      updateToast(toastId, {
+        type: "success",
+        title: `Moved to ${actionLabels[actionType]}`,
+        message: `${successCount} client${successCount === 1 ? "" : "s"} moved successfully`,
+      });
+    }
+
+    // Clear selection after a brief delay
+    setTimeout(() => {
+      setSelectedIds(new Set());
+      setBulkActionProgress(null);
+      refetch();
+    }, 2000);
+  };
+
+  // Handle bulk action confirmation
+  const handleBulkConfirm = () => {
+    if (pendingBulkAction) {
+      const selectedClients = pendingClients?.filter(c => selectedIds.has(c.id)) || [];
+      executeBulkAction(selectedClients, pendingBulkAction.type, pendingBulkAction.targetStatus);
+      setShowBulkConfirmation(false);
+      setPendingBulkAction(null);
+    }
+  };
+
+  const handleBulkCancel = () => {
+    setShowBulkConfirmation(false);
+    setPendingBulkAction(null);
+  };
+
+  const isBulkActionLoading = updateClient.isPending || bulkActionProgress !== null;
+
   if (isLoading) {
     return (
       <div className="bg-white rounded-xl border border-gray-200">
@@ -365,20 +575,95 @@ export function PendingActionsTable() {
           </div>
         )}
 
-        {/* Selection toolbar - hide during evaluation */}
-        {someSelected && !evaluationProgress && (
-          <div className="mt-3 flex items-center gap-3 p-2 bg-blue-50 rounded-lg">
+        {/* Bulk Action Progress */}
+        {bulkActionProgress && (
+          <div className="mt-3 p-4 bg-slate-50 border border-slate-200 rounded-lg">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+                <span className="text-sm font-medium text-gray-900">
+                  Moving to {bulkActionProgress.actionType === "outreach" ? "Outreach" : bulkActionProgress.actionType === "referral" ? "Referrals" : "Scheduling"}...
+                </span>
+              </div>
+              <span className="text-sm text-gray-500">
+                {bulkActionProgress.completed} / {bulkActionProgress.total}
+              </span>
+            </div>
+
+            {/* Progress bar */}
+            <div className="h-2 bg-gray-200 rounded-full overflow-hidden mb-2">
+              <div
+                className="h-full bg-blue-600 transition-all duration-300 ease-out"
+                style={{ width: `${(bulkActionProgress.completed / bulkActionProgress.total) * 100}%` }}
+              />
+            </div>
+
+            {/* Current client */}
+            {bulkActionProgress.current && (
+              <p className="text-sm text-gray-600">
+                Processing: <span className="font-medium">{bulkActionProgress.current}</span>
+              </p>
+            )}
+
+            {/* Results summary when complete */}
+            {bulkActionProgress.completed === bulkActionProgress.total && bulkActionProgress.results.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-slate-200 space-y-1">
+                {bulkActionProgress.results.map((result) => (
+                  <div key={result.clientId} className="flex items-center gap-2 text-sm">
+                    {result.status === "success" ? (
+                      <CheckCircle className="w-4 h-4 text-green-500" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-red-500" />
+                    )}
+                    <span className={result.status === "success" ? "text-green-700" : "text-red-700"}>
+                      {result.clientName}: {result.message}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Selection toolbar - hide during evaluation or bulk action */}
+        {someSelected && !evaluationProgress && !bulkActionProgress && (
+          <div className="mt-3 flex flex-wrap items-center gap-3 p-3 bg-blue-50 rounded-lg">
             <span className="text-sm text-blue-700 font-medium">
               {selectedIds.size} selected
             </span>
             <div className="h-4 w-px bg-blue-200" />
             <button
               onClick={handleEvaluateInquiries}
-              disabled={evaluateClient.isPending}
+              disabled={evaluateClient.isPending || isBulkActionLoading}
               className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 rounded-lg transition-colors"
             >
               <ClipboardCheck className="w-4 h-4" />
-              Evaluate Inquiries
+              Evaluate
+            </button>
+            <div className="h-4 w-px bg-blue-200" />
+            <button
+              onClick={() => handleBulkAction("outreach", "pending_outreach")}
+              disabled={isBulkActionLoading}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 rounded-lg transition-colors"
+            >
+              <Mail className="w-4 h-4" />
+              Outreach
+            </button>
+            <button
+              onClick={() => handleBulkAction("referral", "pending_referral")}
+              disabled={isBulkActionLoading}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 disabled:bg-amber-400 rounded-lg transition-colors"
+            >
+              <Users className="w-4 h-4" />
+              Referrals
+            </button>
+            <button
+              onClick={() => handleBulkAction("scheduling", "ready_to_schedule")}
+              disabled={isBulkActionLoading}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 rounded-lg transition-colors"
+            >
+              <Calendar className="w-4 h-4" />
+              Scheduling
             </button>
           </div>
         )}
@@ -476,13 +761,21 @@ export function PendingActionsTable() {
                     <td className="px-6 py-4 text-sm text-gray-600">
                       {client.requestedClinician || "-"}
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      <Link
-                        href={`/clients/${client.id}`}
-                        className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-colors"
-                      >
-                        View
-                      </Link>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center justify-end gap-2">
+                        <ClientActionButtons
+                          client={client}
+                          variant="icon-only"
+                          onActionComplete={() => refetch()}
+                        />
+                        <button
+                          onClick={() => handleViewClick(client.id)}
+                          className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-colors"
+                          title="Click to preview, double-click to open"
+                        >
+                          View
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -500,6 +793,86 @@ export function PendingActionsTable() {
           View all clients &rarr;
         </Link>
       </div>
+
+      {/* Client Preview Modal */}
+      <ClientPreviewModal
+        clientId={previewClientId}
+        isOpen={isPreviewOpen}
+        onClose={handleClosePreview}
+        onActionComplete={() => refetch()}
+      />
+
+      {/* Bulk Action Confirmation Modal */}
+      {showBulkConfirmation && pendingBulkAction && (
+        <div className="fixed inset-0 z-[60] overflow-y-auto">
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50"
+            onClick={handleBulkCancel}
+          />
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div
+              className="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                  <AlertTriangle className="w-5 h-5 text-amber-600" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-gray-900">Skip Evaluation?</h3>
+                  <p className="mt-2 text-sm text-gray-600">
+                    {pendingBulkAction.unevaluatedClients.length === 1
+                      ? `1 client has not been evaluated yet.`
+                      : `${pendingBulkAction.unevaluatedClients.length} clients have not been evaluated yet.`}
+                    {" "}Are you sure you want to move {selectedIds.size === 1 ? "this client" : `these ${selectedIds.size} clients`} to{" "}
+                    {pendingBulkAction.type === "outreach"
+                      ? "Outreach"
+                      : pendingBulkAction.type === "referral"
+                      ? "Referrals"
+                      : "Scheduling"}
+                    {" "}without evaluating first?
+                  </p>
+                  {pendingBulkAction.unevaluatedClients.length <= 5 && (
+                    <div className="mt-3 text-sm text-gray-500">
+                      <strong>Unevaluated:</strong>{" "}
+                      {pendingBulkAction.unevaluatedClients
+                        .map(c => `${c.firstName} ${c.lastName}`)
+                        .join(", ")}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  onClick={handleBulkCancel}
+                  disabled={isBulkActionLoading}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleBulkConfirm}
+                  disabled={isBulkActionLoading}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {isBulkActionLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <ArrowRight className="w-4 h-4" />
+                      Yes, Skip Evaluation
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

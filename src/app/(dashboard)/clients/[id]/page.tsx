@@ -23,6 +23,7 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
 } from "lucide-react";
+import { ClientActionButtons } from "@/components/clients/client-action-buttons";
 
 // Severity badge colors for text evaluation
 const SEVERITY_CONFIG: Record<
@@ -255,6 +256,12 @@ export default function ClientDetailPage({ params }: PageProps) {
           </div>
 
           <div className="flex items-center gap-3">
+            <ClientActionButtons
+              client={client}
+              variant="full"
+              showAllActions
+            />
+            <div className="h-6 w-px bg-gray-200" />
             {getActionButtons()}
             <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
               <Edit className="w-5 h-5" />
