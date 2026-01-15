@@ -1,0 +1,94 @@
+flowchart TD
+    subgraph A["<b>A: Website Form Processing</b>"]
+        A1[Client Submits Website Form]
+        A2[Translation to Google Sheet]
+        A3[Email Received in Intake Inbox]
+        A4[Form Review]
+        A4a{Form Evaluation<br/>Criteria Check}
+        
+        A1 --> A2 --> A3 --> A4 --> A4a
+    end
+
+    subgraph R["<b>R: Referral Email</b>"]
+        R1[Generate Referral Email]
+        R2[Referral Email Sent to Client]
+        R3([Closed - Referral])
+        
+        R1 --> R2 --> R3
+    end
+
+    subgraph B["<b>B: Initial Outreach</b>"]
+        B1[Generate Initial Outreach Email<br/><i>Based on clinician, insurance, time preferences</i>]
+        B2[Email Ready to Preview<br/><i>Preview button in table</i>]
+        B3[Initial Outreach Email - Send<br/><i>Send button in table</i>]
+        B4[Email Sent Successfully<br/><i>Timestamp added, follow-up dates calculated</i>]
+        
+        B1 --> B2 --> B3 --> B4
+    end
+
+    subgraph C["<b>C: 2nd & 3rd Outreach</b>"]
+        C1{Check Inbox<br/>for Reply}
+        C2[Generate 1st Follow-up]
+        C3[Send 1st Follow-up<br/><i>Timestamp added</i>]
+        C4{Check Inbox<br/>for Reply}
+        C5[Generate 2nd Follow-up]
+        C6[Send 2nd Follow-up<br/><i>Timestamp added</i>]
+        C7{Check Inbox<br/>for Reply}
+        C9([Closed - No Contact])
+        
+        C1 -->|No Reply| C2 --> C3 --> C4
+        C4 -->|No Reply| C5 --> C6 --> C7
+        C7 -->|No Reply| C9
+    end
+
+    subgraph D["<b>D: Client Response Handling</b>"]
+        D1{Check Inbox<br/>for Reply}
+        D2[Client Email Found<br/><i>Table icon generated</i>]
+        D3a[Ready to Schedule]
+        D3b[Needs More Times/Options<br/><i>Generate additional info email</i>]
+        D3c[Has Questions<br/><i>Generate response email</i>]
+        
+        D1 -->|Reply Found| D2
+        D2 --> D3a
+        D2 --> D3b
+        D2 --> D3c
+        D3b --> D1
+        D3c --> D1
+    end
+
+    subgraph E["<b>E: Schedule in Simple Practice</b>"]
+        E1[Gather Client Info<br/><i>Name, DOB, etc.</i>]
+        E2[Gather Appointment Details<br/><i>Time, recurrence, clinician</i>]
+        E3[Setup in Simple Practice]
+        E4[Remove Timeslot from Availability]
+        E5[Mark Client as Scheduled]
+        E6[Notify Client<br/><i>Send SP Portal Link</i>]
+        E7[Notify Clinician]
+        E8[Add to Scheduled/<br/>Paperwork Incomplete Table]
+        
+        E1 --> E2 --> E3 --> E4 --> E5 --> E6 --> E7 --> E8
+    end
+
+    subgraph F["<b>F: Paperwork Tracking</b>"]
+        F1[Monitor Paperwork Completion<br/><i>TBD</i>]
+    end
+
+    %% Cross-workflow connections
+    A4a -->|Potential Client| B1
+    A4a -->|Referral Needed| R1
+    B4 --> C1
+    C1 -->|Reply Received| D2
+    C4 -->|Reply Received| D2
+    C7 -->|Reply Received| D2
+    D3a --> E1
+    E8 --> F1
+
+    %% Styling
+    classDef startEnd fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef process fill:#fff3e0,stroke:#e65100,stroke-width:1px
+    classDef decision fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    classDef closed fill:#f3e5f5,stroke:#4a148c,stroke-width:2px,rx:20
+    
+    class A1 startEnd
+    class R3,C9 closed
+    class A4a,C1,C4,C7,D1 decision
