@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import React from "react";
 
 interface SyncStatus {
   formResponsesCount: number;
@@ -55,38 +56,24 @@ export function useFormSync() {
   });
 }
 
-// Auto-sync hook - DISABLED for now to prevent infinite loops
-// Will be re-enabled once sheet headers are fixed
+// Auto-sync hook - automatically syncs when pending entries are detected
 export function useAutoFormSync() {
   const { data: status, isLoading, error } = useFormSyncStatus();
   const syncMutation = useFormSync();
 
-  // Auto-sync disabled - user must click "Sync Now" manually
-  // This prevents infinite loops when sheet headers are misconfigured
+  // Auto-sync when pending entries are detected
+  // Uses React Query's built-in deduplication to prevent rapid re-syncs
+  React.useEffect(() => {
+    if (
+      status?.pendingSync &&
+      status.pendingSync > 0 &&
+      !syncMutation.isPending &&
+      !syncMutation.isSuccess // Don't re-trigger if we just synced
+    ) {
+      syncMutation.mutate();
+    }
+  }, [status?.pendingSync]);
 
   return { status, syncMutation, isLoading, error };
 }
 
-// Clear all clients (for testing)
-export function useClearClients() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async () => {
-      const response = await fetch("/api/clients", {
-        method: "DELETE",
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to clear clients");
-      }
-      return response.json();
-    },
-    onSuccess: () => {
-      // Invalidate relevant queries
-      queryClient.invalidateQueries({ queryKey: ["form-sync-status"] });
-      queryClient.invalidateQueries({ queryKey: ["clients"] });
-      queryClient.invalidateQueries({ queryKey: ["activity"] });
-    },
-  });
-}

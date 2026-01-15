@@ -1,47 +1,13 @@
 "use client";
 
-import { RefreshCw, CheckCircle, AlertCircle, Clock, Trash2, Wrench } from "lucide-react";
-import { useAutoFormSync, useClearClients } from "@/hooks/use-form-sync";
-import { useState } from "react";
+import { RefreshCw, CheckCircle, AlertCircle, Clock } from "lucide-react";
+import { useAutoFormSync } from "@/hooks/use-form-sync";
 
 export function SyncStatus() {
-  // Auto-sync disabled - manual sync only until headers are fixed
   const { status, syncMutation, isLoading, error } = useAutoFormSync();
-  const clearMutation = useClearClients();
-  const [fixingHeaders, setFixingHeaders] = useState(false);
-  const [fixResult, setFixResult] = useState<string | null>(null);
 
   const handleSync = () => {
     syncMutation.mutate();
-  };
-
-  const handleClear = () => {
-    if (window.confirm("Are you sure you want to clear all client data? This cannot be undone.")) {
-      clearMutation.mutate();
-    }
-  };
-
-  const handleFixHeaders = async () => {
-    if (!window.confirm("This will fix the Clients sheet headers and clear all existing client data. Continue?")) {
-      return;
-    }
-    setFixingHeaders(true);
-    setFixResult(null);
-    try {
-      const response = await fetch("/api/setup/fix-headers", { method: "POST" });
-      const data = await response.json();
-      if (response.ok) {
-        setFixResult(data.message);
-        // Refresh data after fixing
-        window.location.reload();
-      } else {
-        setFixResult(`Error: ${data.error}`);
-      }
-    } catch (e) {
-      setFixResult(`Error: ${e}`);
-    } finally {
-      setFixingHeaders(false);
-    }
   };
 
   if (isLoading) {
@@ -118,37 +84,6 @@ export function SyncStatus() {
           Sync failed
         </div>
       )}
-
-      {clearMutation.isSuccess && (
-        <div className="mt-3 p-2 bg-blue-50 rounded-lg text-sm text-blue-700">
-          All client data cleared
-        </div>
-      )}
-
-      {/* Admin tools for testing - remove in production */}
-      <div className="mt-3 pt-3 border-t border-gray-200 space-y-2">
-        {status?.clientsCount && status.clientsCount > 0 && (
-          <button
-            onClick={handleClear}
-            disabled={clearMutation.isPending}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors text-red-600 hover:bg-red-50 disabled:opacity-50"
-          >
-            <Trash2 className="w-4 h-4" />
-            {clearMutation.isPending ? "Clearing..." : "Clear All Clients"}
-          </button>
-        )}
-        <button
-          onClick={handleFixHeaders}
-          disabled={fixingHeaders}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors text-orange-600 hover:bg-orange-50 disabled:opacity-50"
-        >
-          <Wrench className="w-4 h-4" />
-          {fixingHeaders ? "Fixing..." : "Fix Sheet Headers"}
-        </button>
-        {fixResult && (
-          <p className="text-xs text-gray-600">{fixResult}</p>
-        )}
-      </div>
     </div>
   );
 }
