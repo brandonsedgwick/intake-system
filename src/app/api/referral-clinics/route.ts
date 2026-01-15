@@ -11,7 +11,9 @@ export async function GET() {
       return NextResponse.json({ error }, { status: error === "Unauthorized" ? 401 : 403 });
     }
 
+    console.log("[referral-clinics] Fetching clinics...");
     const clinics = await referralClinicsApi.getAll(session!.accessToken!);
+    console.log("[referral-clinics] Found clinics:", clinics.length, clinics.map(c => ({ id: c.id, name: c.practiceName, isActive: c.isActive })));
 
     return NextResponse.json(clinics);
   } catch (error) {

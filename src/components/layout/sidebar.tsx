@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
@@ -15,15 +16,7 @@ import {
   Settings,
   LogOut,
 } from "lucide-react";
-
-const navigation = [
-  { name: "Dashboard", href: "/dashboard", icon: Home },
-  { name: "Inbox", href: "/inbox", icon: Inbox, badge: 5 },
-  { name: "Clients", href: "/clients", icon: Users },
-  { name: "Outreach", href: "/outreach", icon: Mail, badge: 8 },
-  { name: "Scheduling", href: "/scheduling", icon: Calendar, badge: 2 },
-  { name: "Referrals", href: "/referrals", icon: Link2 },
-];
+import { useClients } from "@/hooks/use-clients";
 
 const secondaryNavigation = [
   { name: "Clinicians", href: "/clinicians", icon: User },
@@ -34,6 +27,43 @@ const secondaryNavigation = [
 export function Sidebar() {
   const pathname = usePathname();
   const { data: session } = useSession();
+  const { data: clients } = useClients();
+
+  // Calculate dynamic badge counts based on client statuses
+  const badgeCounts = useMemo(() => {
+    if (!clients) return { inbox: 0, outreach: 0, scheduling: 0, referrals: 0 };
+
+    const inbox = clients.filter(
+      (c) => c.status === "new" || c.status === "pending_evaluation"
+    ).length;
+
+    const outreach = clients.filter(
+      (c) =>
+        c.status === "pending_outreach" ||
+        c.status === "outreach_sent" ||
+        c.status === "follow_up_1" ||
+        c.status === "follow_up_2"
+    ).length;
+
+    const scheduling = clients.filter(
+      (c) => c.status === "ready_to_schedule" || c.status === "replied"
+    ).length;
+
+    const referrals = clients.filter(
+      (c) => c.status === "pending_referral"
+    ).length;
+
+    return { inbox, outreach, scheduling, referrals };
+  }, [clients]);
+
+  const navigation = [
+    { name: "Dashboard", href: "/dashboard", icon: Home },
+    { name: "Inbox", href: "/inbox", icon: Inbox, badge: badgeCounts.inbox },
+    { name: "Clients", href: "/clients", icon: Users },
+    { name: "Outreach", href: "/outreach", icon: Mail, badge: badgeCounts.outreach },
+    { name: "Scheduling", href: "/scheduling", icon: Calendar, badge: badgeCounts.scheduling },
+    { name: "Referrals", href: "/referrals", icon: Link2, badge: badgeCounts.referrals },
+  ];
 
   const isActive = (href: string) => {
     if (href === "/dashboard") {
@@ -87,13 +117,15 @@ export function Sidebar() {
             >
               <Icon className="w-5 h-5" />
               <span className="font-medium">{item.name}</span>
-              {item.badge && (
+              {item.badge !== undefined && item.badge > 0 && (
                 <span
                   className={`ml-auto text-xs font-bold px-2 py-0.5 rounded-full ${
                     item.name === "Inbox"
                       ? "bg-red-500 text-white"
                       : item.name === "Outreach"
                       ? "bg-yellow-500 text-white"
+                      : item.name === "Referrals"
+                      ? "bg-amber-500 text-white"
                       : "bg-green-500 text-white"
                   }`}
                 >

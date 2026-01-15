@@ -850,8 +850,19 @@ export const referralClinicsApi = {
     const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID!;
 
     try {
+      console.log("[referralClinicsApi] Fetching from sheet:", SHEETS.REFERRAL_CLINICS);
       const data = await getSheetData(sheets, spreadsheetId, SHEETS.REFERRAL_CLINICS);
-      if (data.length < 2) return [];
+      console.log("[referralClinicsApi] Raw data rows:", data.length);
+      if (data.length > 0) {
+        console.log("[referralClinicsApi] Headers:", data[0]);
+      }
+      if (data.length > 1) {
+        console.log("[referralClinicsApi] First data row:", data[1]);
+      }
+      if (data.length < 2) {
+        console.log("[referralClinicsApi] No data rows found (only headers or empty)");
+        return [];
+      }
 
       const headers = data[0];
       return data.slice(1).map((row) => {
@@ -860,22 +871,44 @@ export const referralClinicsApi = {
           clinic[header] = row[index] || "";
         });
 
+        // Safely parse JSON fields with fallbacks
+        let specialties: string[] = [];
+        if (clinic.specialties) {
+          try {
+            specialties = JSON.parse(clinic.specialties);
+          } catch {
+            // Handle non-JSON format (comma-separated string fallback)
+            specialties = clinic.specialties.split(",").map(s => s.trim()).filter(Boolean);
+          }
+        }
+
+        let customFields: Record<string, string> | undefined;
+        if (clinic.customFields) {
+          try {
+            customFields = JSON.parse(clinic.customFields);
+          } catch {
+            // If parsing fails, leave as undefined
+            customFields = undefined;
+          }
+        }
+
         return {
           id: clinic.id,
           practiceName: clinic.practiceName,
           address: clinic.address || undefined,
           phone: clinic.phone || undefined,
           email: clinic.email || undefined,
-          specialties: clinic.specialties ? JSON.parse(clinic.specialties) : [],
+          specialties,
           notes: clinic.notes || undefined,
-          customFields: clinic.customFields ? JSON.parse(clinic.customFields) : undefined,
-          isActive: clinic.isActive === "true",
+          customFields,
+          isActive: clinic.isActive?.toLowerCase() === "true",
           createdAt: clinic.createdAt,
           updatedAt: clinic.updatedAt,
         } as ReferralClinic;
       });
-    } catch {
+    } catch (error) {
       // Sheet might not exist yet
+      console.error("Error fetching referral clinics:", error);
       return [];
     }
   },
@@ -943,16 +976,35 @@ export const referralClinicsApi = {
       existing[header] = data[rowIndex][index] || "";
     });
 
+    // Safely parse JSON fields with fallbacks
+    let specialties: string[] = [];
+    if (existing.specialties) {
+      try {
+        specialties = JSON.parse(existing.specialties);
+      } catch {
+        specialties = existing.specialties.split(",").map(s => s.trim()).filter(Boolean);
+      }
+    }
+
+    let customFields: Record<string, string> | undefined;
+    if (existing.customFields) {
+      try {
+        customFields = JSON.parse(existing.customFields);
+      } catch {
+        customFields = undefined;
+      }
+    }
+
     const existingClinic: ReferralClinic = {
       id: existing.id,
       practiceName: existing.practiceName,
       address: existing.address || undefined,
       phone: existing.phone || undefined,
       email: existing.email || undefined,
-      specialties: existing.specialties ? JSON.parse(existing.specialties) : [],
+      specialties,
       notes: existing.notes || undefined,
-      customFields: existing.customFields ? JSON.parse(existing.customFields) : undefined,
-      isActive: existing.isActive === "true",
+      customFields,
+      isActive: existing.isActive?.toLowerCase() === "true",
       createdAt: existing.createdAt,
       updatedAt: existing.updatedAt,
     };
