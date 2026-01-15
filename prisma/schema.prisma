@@ -1,0 +1,218 @@
+// Prisma Schema for Therapy Intake System
+// Migrating configuration data from Google Sheets to SQLite
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// Clinicians - Staff who provide therapy
+// ============================================
+model Clinician {
+  id                   String   @id @default(uuid())
+  firstName            String
+  lastName             String
+  email                String   @unique
+  calendarId           String?
+  simplePracticeId     String?
+  insurancePanels      String   @default("[]") // JSON array of strings
+  specialties          String   @default("[]") // JSON array of strings
+  newClientCapacity    Int      @default(0)
+  isAcceptingNew       Boolean  @default(true)
+  defaultSessionLength Int      @default(50)
+
+  // Relations
+  availabilitySlots Availability[]
+
+  @@map("clinicians")
+}
+
+// ============================================
+// Availability - Clinician scheduling slots
+// ============================================
+model Availability {
+  id             String  @id @default(uuid())
+  clinicianId    String
+  dayOfWeek      Int // 0-6 (Sunday-Saturday)
+  startTime      String // HH:MM format
+  endTime        String // HH:MM format
+  isRecurring    Boolean @default(true)
+  specificDate   String? // ISO date for non-recurring
+  isBooked       Boolean @default(false)
+  bookedClientId String? // References Client in Google Sheets
+
+  // Relations
+  clinician Clinician @relation(fields: [clinicianId], references: [id], onDelete: Cascade)
+
+  @@index([clinicianId])
+  @@index([dayOfWeek])
+  @@map("availability")
+}
+
+// ============================================
+// Email Templates - Reusable email content
+// ============================================
+model EmailTemplate {
+  id        String   @id @default(uuid())
+  name      String
+  type      String // initial_outreach, follow_up_1, follow_up_2, referral_*
+  subject   String
+  body      String // Text content (can be long)
+  isActive  Boolean  @default(true)
+  updatedAt DateTime @default(now()) @updatedAt
+  updatedBy String?
+
+  @@map("email_templates")
+}
+
+// ============================================
+// Audit Log - Track all system changes
+// ============================================
+model AuditLog {
+  id            String   @id @default(uuid())
+  timestamp     DateTime @default(now())
+  userId        String
+  userEmail     String
+  action        String // create, update, delete, etc.
+  entityType    String // client, clinician, template, settings, communication
+  entityId      String
+  previousValue String? // JSON string of previous state
+  newValue      String? // JSON string of new state
+  ipAddress     String?
+
+  @@index([entityType, entityId])
+  @@index([timestamp])
+  @@index([userEmail])
+  @@map("audit_log")
+}
+
+// ============================================
+// Evaluation Criteria - Rules for client evaluation
+// ============================================
+model EvaluationCriteria {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  field       String // Client field to evaluate
+  operator    String // exists, not_exists, equals, contains, etc.
+  value       String // Comparison value (comma-separated for lists)
+  action      String // flag, flag_urgent, flag_review
+  priority    Int      @default(0) // Lower = higher priority
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  @@index([isActive, priority])
+  @@map("evaluation_criteria")
+}
+
+// ============================================
+// Text Evaluation Rules - Pattern matching for intake forms
+// ============================================
+model TextEvaluationRule {
+  id             String   @id @default(uuid())
+  name           String
+  category       String // suicidal_ideation, self_harm, substance_use, etc.
+  severity       String // none, low, medium, high, urgent
+  patterns       String   @default("[]") // JSON array of pattern strings
+  isRegex        Boolean  @default(false)
+  negationWords  String   @default("[]") // JSON array of negation words
+  negationWindow Int      @default(5)
+  requiresLLM    Boolean  @default(false)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now()) @updatedAt
+
+  @@index([isActive])
+  @@index([category])
+  @@map("text_evaluation_rules")
+}
+
+// ============================================
+// Referral Clinics - External clinics for referrals
+// ============================================
+model ReferralClinic {
+  id           String   @id @default(uuid())
+  practiceName String
+  address      String?
+  phone        String?
+  email        String?
+  specialties  String   @default("[]") // JSON array of specialties
+  notes        String?
+  customFields String? // JSON object for dynamic fields
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
+
+  @@index([isActive])
+  @@map("referral_clinics")
+}
+
+// ============================================
+// Referral Clinics Config - Custom field definitions
+// ============================================
+model ReferralClinicsConfig {
+  id           String   @id @default(uuid())
+  customFields String   @default("[]") // JSON array of custom field definitions
+  updatedAt    DateTime @default(now()) @updatedAt
+
+  @@map("referral_clinics_config")
+}
+
+// ============================================
+// Settings - Key-value application settings
+// ============================================
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@map("settings")
+}
+
+// ============================================
+// Intake Fields - Form field configuration
+// ============================================
+model IntakeField {
+  id              String   @id @default(uuid())
+  field           String   @unique // Client field name
+  label           String
+  description     String?
+  type            String // text, email, phone, date, select, multiselect, textarea, checkbox
+  googleFormField String? // Field name in Google Form (for mapping)
+  isRequired      Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  order           Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now()) @updatedAt
+
+  @@index([isActive, order])
+  @@map("intake_fields")
+}
+
+// ============================================
+// Communications - Email/phone/note records
+// (Linked to Clients via clientId stored as string)
+// ============================================
+model Communication {
+  id             String   @id @default(uuid())
+  clientId       String // References Client in Google Sheets
+  timestamp      DateTime @default(now())
+  direction      String // in, out
+  type           String // email, note, phone
+  gmailMessageId String?
+  gmailThreadId  String?
+  subject        String
+  bodyPreview    String
+  fullBody       String?
+  sentBy         String?
+
+  @@index([clientId])
+  @@index([timestamp])
+  @@map("communications")
+}

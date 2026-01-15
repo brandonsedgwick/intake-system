@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/auth-options";
-import { clientsApi, auditLogApi } from "@/lib/api/google-sheets";
+import { clientsApi } from "@/lib/api/google-sheets";
+import { auditLogDbApi } from "@/lib/api/prisma-db";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -62,7 +63,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     // Log the action
-    await auditLogApi.log(session.accessToken, {
+    await auditLogDbApi.log({
       userId: session.user?.email || "unknown",
       userEmail: session.user?.email || "unknown",
       action: "update",

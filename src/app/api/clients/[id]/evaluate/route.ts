@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/auth-options";
-import { clientsApi, auditLogApi, evaluationCriteriaApi, settingsApi } from "@/lib/api/google-sheets";
+import { clientsApi } from "@/lib/api/google-sheets";
+import { evaluationCriteriaDbApi, settingsDbApi, auditLogDbApi } from "@/lib/api/prisma-db";
 import {
   evaluateClient,
   checkForReferralKeywords,
-  EvaluationResult,
 } from "@/lib/services/evaluation";
 import {
   evaluateTextWithPatterns,
@@ -18,7 +18,7 @@ import {
   evaluateTextWithLLM,
   shouldUseLLM,
 } from "@/lib/services/vertex-ai";
-import { ClientStatus, TextEvaluationResult, TextEvaluationSeverity } from "@/types/client";
+import { ClientStatus, TextEvaluationResult } from "@/types/client";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -35,14 +35,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
-    // Fetch client
+    // Fetch client (still from Google Sheets)
     const client = await clientsApi.getById(session.accessToken, id);
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
-    // Fetch evaluation criteria from sheet
-    const criteria = await evaluationCriteriaApi.getActive(session.accessToken);
+    // Fetch evaluation criteria from SQLite
+    const criteria = await evaluationCriteriaDbApi.getActive();
 
     // Run evaluation
     const result = evaluateClient(client, criteria);
@@ -62,8 +62,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       .join("\n\n");
 
     if (textToEvaluate.trim()) {
-      // Fetch LLM settings from database
-      const llmSettings = await settingsApi.getLLMSettings(session.accessToken);
+      // Fetch LLM settings from SQLite
+      const llmSettings = await settingsDbApi.getLLMSettings();
 
       const rules = getDefaultRulesWithIds();
       const patternResult = evaluateTextWithPatterns(textToEvaluate, rules);
@@ -94,7 +94,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const hasTextEvalFlags = textEvalResult && textEvalResult.flags.length > 0;
     const textEvalSeverity = textEvalResult?.overallSeverity || "none";
     const hasUrgentTextFlags = textEvalSeverity === "urgent";
-    const hasHighTextFlags = textEvalSeverity === "high" || textEvalSeverity === "urgent";
 
     // Determine new status based on evaluation result
     let newStatus: ClientStatus;
@@ -146,7 +145,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Update client with evaluation results
+    // Update client with evaluation results (still in Google Sheets)
     const updatedClient = await clientsApi.update(session.accessToken, id, {
       status: newStatus,
       evaluationNotes: notes.join("\n"),
@@ -154,8 +153,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       textEvaluationResult: textEvalResult ? JSON.stringify(textEvalResult) : undefined,
     });
 
-    // Log the action
-    await auditLogApi.log(session.accessToken, {
+    // Log the action to SQLite
+    await auditLogDbApi.log({
       userId: session.user?.email || "unknown",
       userEmail: session.user?.email || "unknown",
       action: "evaluate",

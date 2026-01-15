@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkAdminAccess } from "@/lib/auth/admin";
-import { referralClinicsApi, auditLogApi } from "@/lib/api/google-sheets";
+import { referralClinicsDbApi, auditLogDbApi } from "@/lib/api/prisma-db";
 
 // GET /api/referral-clinics/[id] - Get a specific referral clinic
 export async function GET(
@@ -8,14 +8,14 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { isAdmin, session, error } = await checkAdminAccess();
+    const { isAdmin, error } = await checkAdminAccess();
 
     if (!isAdmin) {
       return NextResponse.json({ error }, { status: error === "Unauthorized" ? 401 : 403 });
     }
 
     const { id } = await params;
-    const clinic = await referralClinicsApi.getById(session!.accessToken!, id);
+    const clinic = await referralClinicsDbApi.getById(id);
 
     if (!clinic) {
       return NextResponse.json(
@@ -50,7 +50,7 @@ export async function PATCH(
     const body = await request.json();
 
     // Get previous value for audit
-    const previousClinic = await referralClinicsApi.getById(session!.accessToken!, id);
+    const previousClinic = await referralClinicsDbApi.getById(id);
 
     if (!previousClinic) {
       return NextResponse.json(
@@ -59,7 +59,7 @@ export async function PATCH(
       );
     }
 
-    const updatedClinic = await referralClinicsApi.update(session!.accessToken!, id, body);
+    const updatedClinic = await referralClinicsDbApi.update(id, body);
 
     if (!updatedClinic) {
       return NextResponse.json(
@@ -69,7 +69,7 @@ export async function PATCH(
     }
 
     // Log the action
-    await auditLogApi.log(session!.accessToken!, {
+    await auditLogDbApi.log({
       userId: session!.user?.email || "unknown",
       userEmail: session!.user?.email || "unknown",
       action: "update",
@@ -104,7 +104,7 @@ export async function DELETE(
     const { id } = await params;
 
     // Get clinic for audit log
-    const clinic = await referralClinicsApi.getById(session!.accessToken!, id);
+    const clinic = await referralClinicsDbApi.getById(id);
 
     if (!clinic) {
       return NextResponse.json(
@@ -113,7 +113,7 @@ export async function DELETE(
       );
     }
 
-    const deleted = await referralClinicsApi.delete(session!.accessToken!, id);
+    const deleted = await referralClinicsDbApi.delete(id);
 
     if (!deleted) {
       return NextResponse.json(
@@ -123,7 +123,7 @@ export async function DELETE(
     }
 
     // Log the action
-    await auditLogApi.log(session!.accessToken!, {
+    await auditLogDbApi.log({
       userId: session!.user?.email || "unknown",
       userEmail: session!.user?.email || "unknown",
       action: "delete",

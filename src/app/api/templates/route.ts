@@ -1,20 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/auth-options";
-import { templatesApi, auditLogApi } from "@/lib/api/google-sheets";
-import { google } from "googleapis";
-import { EmailTemplate } from "@/types/client";
+import { templatesDbApi, auditLogDbApi } from "@/lib/api/prisma-db";
 
 // GET /api/templates - Get all email templates
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.accessToken) {
+    if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const templates = await templatesApi.getAll(session.accessToken);
+    const templates = await templatesDbApi.getAll();
     return NextResponse.json(templates);
   } catch (error) {
     console.error("Error fetching templates:", error);
@@ -30,7 +28,7 @@ export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.accessToken) {
+    if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -44,44 +42,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const auth = new google.auth.OAuth2();
-    auth.setCredentials({ access_token: session.accessToken });
-    const sheets = google.sheets({ version: "v4", auth });
-    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID!;
-
-    const newTemplate: EmailTemplate = {
-      id: crypto.randomUUID(),
+    const newTemplate = await templatesDbApi.create({
       name,
       type,
       subject,
       body: templateBody,
       isActive: isActive !== false,
-      updatedAt: new Date().toISOString(),
       updatedBy: session.user?.email || undefined,
-    };
-
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: "EmailTemplates!A:H",
-      valueInputOption: "USER_ENTERED",
-      requestBody: {
-        values: [
-          [
-            newTemplate.id,
-            newTemplate.name,
-            newTemplate.type,
-            newTemplate.subject,
-            newTemplate.body,
-            newTemplate.isActive ? "true" : "false",
-            newTemplate.updatedAt,
-            newTemplate.updatedBy,
-          ],
-        ],
-      },
     });
 
     // Log the action
-    await auditLogApi.log(session.accessToken, {
+    await auditLogDbApi.log({
       userId: session.user?.email || "unknown",
       userEmail: session.user?.email || "unknown",
       action: "create",

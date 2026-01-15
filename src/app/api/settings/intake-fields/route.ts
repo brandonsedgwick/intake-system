@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/auth-options";
-import { google } from "googleapis";
+import { intakeFieldsDbApi } from "@/lib/api/prisma-db";
 
 export interface IntakeField {
   id: string;
@@ -116,62 +116,31 @@ export async function GET() {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.accessToken) {
+    if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const auth = new google.auth.OAuth2();
-    auth.setCredentials({ access_token: session.accessToken });
-    const sheets = google.sheets({ version: "v4", auth });
-    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID!;
+    const fields = await intakeFieldsDbApi.getAll();
 
-    try {
-      const response = await sheets.spreadsheets.values.get({
-        spreadsheetId,
-        range: "IntakeFields!A:K",
-      });
-
-      const rows = response.data.values || [];
-      if (rows.length < 2) {
-        // Return default fields if none configured
-        return NextResponse.json(DEFAULT_INTAKE_FIELDS);
-      }
-
-      const headers = rows[0];
-      const fields: IntakeField[] = rows.slice(1).map((row) => {
-        const field: Record<string, unknown> = {};
-        headers.forEach((header, index) => {
-          let value: unknown = row[index] || "";
-
-          // Parse JSON fields
-          if (header === "options" && value) {
-            try {
-              value = JSON.parse(value as string);
-            } catch {
-              value = [];
-            }
-          }
-
-          // Parse boolean fields
-          if (header === "required" || header === "isActive") {
-            value = value === "true";
-          }
-
-          // Parse number fields
-          if (header === "order") {
-            value = parseInt(value as string) || 0;
-          }
-
-          field[header] = value;
-        });
-        return field as unknown as IntakeField;
-      });
-
-      return NextResponse.json(fields);
-    } catch {
-      // IntakeFields sheet might not exist yet
+    if (fields.length === 0) {
+      // Return default fields if none configured
       return NextResponse.json(DEFAULT_INTAKE_FIELDS);
     }
+
+    // Transform DB fields to IntakeField format
+    const intakeFields: IntakeField[] = fields.map((f) => ({
+      id: f.id,
+      name: f.field,
+      label: f.label,
+      type: f.type as IntakeField["type"],
+      required: f.isRequired,
+      mappedColumn: f.field,
+      formFieldName: f.googleFormField || undefined,
+      order: f.order,
+      isActive: f.isActive,
+    }));
+
+    return NextResponse.json(intakeFields);
   } catch (error) {
     console.error("Error fetching intake fields:", error);
     return NextResponse.json(
@@ -186,79 +155,42 @@ export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.accessToken) {
+    if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const fields: IntakeField[] = await request.json();
 
-    const auth = new google.auth.OAuth2();
-    auth.setCredentials({ access_token: session.accessToken });
-    const sheets = google.sheets({ version: "v4", auth });
-    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID!;
+    // Get existing fields to determine which to update vs create
+    const existingFields = await intakeFieldsDbApi.getAll();
+    const existingIds = new Set(existingFields.map((f) => f.id));
 
-    // Check if IntakeFields sheet exists
-    const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
-    const existingSheets = spreadsheet.data.sheets?.map((s) => s.properties?.title) || [];
+    for (const field of fields) {
+      const dbField = {
+        field: field.name,
+        label: field.label,
+        description: "",
+        type: field.type,
+        googleFormField: field.formFieldName || undefined,
+        isRequired: field.required,
+        isActive: field.isActive,
+        order: field.order,
+      };
 
-    if (!existingSheets.includes("IntakeFields")) {
-      // Create the sheet
-      await sheets.spreadsheets.batchUpdate({
-        spreadsheetId,
-        requestBody: {
-          requests: [
-            {
-              addSheet: {
-                properties: { title: "IntakeFields" },
-              },
-            },
-          ],
-        },
-      });
+      if (existingIds.has(field.id)) {
+        await intakeFieldsDbApi.update(field.id, dbField);
+      } else {
+        await intakeFieldsDbApi.create(dbField);
+      }
     }
 
-    // Clear existing data and write new
-    const headers = [
-      "id",
-      "name",
-      "label",
-      "type",
-      "required",
-      "options",
-      "mappedColumn",
-      "formFieldName",
-      "order",
-      "isActive",
-    ];
-
-    const rows = [
-      headers,
-      ...fields.map((field) => [
-        field.id,
-        field.name,
-        field.label,
-        field.type,
-        field.required ? "true" : "false",
-        field.options ? JSON.stringify(field.options) : "",
-        field.mappedColumn,
-        field.formFieldName || "",
-        field.order.toString(),
-        field.isActive ? "true" : "false",
-      ]),
-    ];
-
-    // Clear and update
-    await sheets.spreadsheets.values.clear({
-      spreadsheetId,
-      range: "IntakeFields!A:K",
-    });
-
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: "IntakeFields!A1",
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: rows },
-    });
+    // Delete fields that are no longer in the list
+    const newIds = new Set(fields.map((f) => f.id));
+    for (const existing of existingFields) {
+      if (!newIds.has(existing.id)) {
+        await intakeFieldsDbApi.delete(existing.id);
+      }
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

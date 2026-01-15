@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/auth-options";
-import { clientsApi, cliniciansApi, templatesApi } from "@/lib/api/google-sheets";
+import { clientsApi } from "@/lib/api/google-sheets";
+import { cliniciansDbApi, templatesDbApi, settingsDbApi } from "@/lib/api/prisma-db";
 import {
   buildTemplateVariables,
   generateEmailPreview,
@@ -27,15 +28,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fetch client
+    // Fetch client (still from Google Sheets)
     const client = await clientsApi.getById(session.accessToken, clientId);
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
-    // Fetch template
-    const template = await templatesApi.getByType(
-      session.accessToken,
+    // Fetch template from SQLite
+    const template = await templatesDbApi.getByType(
       templateType as EmailTemplate["type"]
     );
     if (!template) {
@@ -45,16 +45,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fetch clinician if provided
+    // Fetch clinician from SQLite if provided
     let clinician = null;
     if (clinicianId) {
-      clinician = await cliniciansApi.getById(session.accessToken, clinicianId);
+      clinician = await cliniciansDbApi.getById(clinicianId);
     }
 
-    // TODO: Fetch settings from Settings sheet
+    // Fetch settings from SQLite
+    const allSettings = await settingsDbApi.getAll();
     const settings = {
-      practiceName: "Therapy Practice",
-      practiceEmail: session.user?.email || "intake@practice.com",
+      practiceName: allSettings.practiceName || "Therapy Practice",
+      practiceEmail: allSettings.practiceEmail || session.user?.email || "intake@practice.com",
     };
 
     // Build template variables

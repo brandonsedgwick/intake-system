@@ -1,19 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/auth-options";
-import { textEvaluationRulesApi } from "@/lib/api/google-sheets";
-import { TextEvaluationRule } from "@/types/client";
+import { textEvaluationRulesDbApi } from "@/lib/api/prisma-db";
 
 // GET /api/settings/text-evaluation-rules - Get all text evaluation rules
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.accessToken) {
+    if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const rules = await textEvaluationRulesApi.getAll(session.accessToken);
+    const rules = await textEvaluationRulesDbApi.getAll();
     return NextResponse.json(rules);
   } catch (error) {
     console.error("Error fetching text evaluation rules:", error);
@@ -29,7 +28,7 @@ export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.accessToken) {
+    if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -43,7 +42,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const rule = await textEvaluationRulesApi.create(session.accessToken, {
+    const rule = await textEvaluationRulesDbApi.create({
       name: body.name,
       category: body.category,
       severity: body.severity,
@@ -70,7 +69,7 @@ export async function PATCH(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.accessToken) {
+    if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -84,7 +83,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const { id, ...updates } = body;
-    const rule = await textEvaluationRulesApi.update(session.accessToken, id, updates);
+    const rule = await textEvaluationRulesDbApi.update(id, updates);
 
     if (!rule) {
       return NextResponse.json(
@@ -108,7 +107,7 @@ export async function DELETE(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.accessToken) {
+    if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -122,7 +121,7 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const success = await textEvaluationRulesApi.delete(session.accessToken, id);
+    const success = await textEvaluationRulesDbApi.delete(id);
 
     if (!success) {
       return NextResponse.json(

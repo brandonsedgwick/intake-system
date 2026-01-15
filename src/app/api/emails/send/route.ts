@@ -2,11 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/auth-options";
 import { google } from "googleapis";
-import {
-  clientsApi,
-  communicationsApi,
-  auditLogApi,
-} from "@/lib/api/google-sheets";
+import { clientsApi } from "@/lib/api/google-sheets";
+import { communicationsDbApi, auditLogDbApi } from "@/lib/api/prisma-db";
 import { ClientStatus } from "@/types/client";
 
 // Helper to create a raw email for Gmail API
@@ -55,7 +52,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verify client exists
+    // Verify client exists (still from Google Sheets)
     const client = await clientsApi.getById(session.accessToken, clientId);
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
@@ -84,8 +81,8 @@ export async function POST(request: NextRequest) {
     const messageId = response.data.id;
     const threadId = response.data.threadId;
 
-    // Record the communication
-    await communicationsApi.create(session.accessToken, {
+    // Record the communication in SQLite
+    await communicationsDbApi.create({
       clientId,
       timestamp: new Date().toISOString(),
       direction: "out",
@@ -98,7 +95,7 @@ export async function POST(request: NextRequest) {
       sentBy: session.user?.email || undefined,
     });
 
-    // Update client status based on template type
+    // Update client status based on template type (still in Google Sheets)
     let newStatus: ClientStatus | null = null;
     let updateFields: Record<string, string | null> = {};
 
@@ -131,8 +128,8 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Log the action
-    await auditLogApi.log(session.accessToken, {
+    // Log the action to SQLite
+    await auditLogDbApi.log({
       userId: session.user?.email || "unknown",
       userEmail: session.user?.email || "unknown",
       action: "send_email",

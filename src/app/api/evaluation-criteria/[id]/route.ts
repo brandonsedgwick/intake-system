@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkAdminAccess } from "@/lib/auth/admin";
-import { evaluationCriteriaApi, auditLogApi } from "@/lib/api/google-sheets";
+import { evaluationCriteriaDbApi, auditLogDbApi } from "@/lib/api/prisma-db";
 
 // DELETE /api/evaluation-criteria/[id] - Delete evaluation criteria (admin only)
 export async function DELETE(
@@ -15,7 +15,7 @@ export async function DELETE(
     }
 
     const { id } = await params;
-    const deleted = await evaluationCriteriaApi.delete(session!.accessToken!, id);
+    const deleted = await evaluationCriteriaDbApi.delete(id);
 
     if (!deleted) {
       return NextResponse.json(
@@ -25,7 +25,7 @@ export async function DELETE(
     }
 
     // Log the action
-    await auditLogApi.log(session!.accessToken!, {
+    await auditLogDbApi.log({
       userId: session!.user?.email || "unknown",
       userEmail: session!.user?.email || "unknown",
       action: "delete",
@@ -58,11 +58,7 @@ export async function PATCH(
     const { id } = await params;
     const body = await request.json();
 
-    const updated = await evaluationCriteriaApi.update(
-      session!.accessToken!,
-      id,
-      body
-    );
+    const updated = await evaluationCriteriaDbApi.update(id, body);
 
     if (!updated) {
       return NextResponse.json(
@@ -72,7 +68,7 @@ export async function PATCH(
     }
 
     // Log the action
-    await auditLogApi.log(session!.accessToken!, {
+    await auditLogDbApi.log({
       userId: session!.user?.email || "unknown",
       userEmail: session!.user?.email || "unknown",
       action: "update",

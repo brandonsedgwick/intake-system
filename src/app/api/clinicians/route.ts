@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/auth-options";
-import { cliniciansApi, auditLogApi } from "@/lib/api/google-sheets";
-import { google } from "googleapis";
+import { cliniciansDbApi, auditLogDbApi } from "@/lib/api/prisma-db";
 import { Clinician } from "@/types/client";
 
 // GET /api/clinicians - Get all clinicians
@@ -10,7 +9,7 @@ export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.accessToken) {
+    if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -21,14 +20,11 @@ export async function GET(request: NextRequest) {
     let clinicians: Clinician[];
 
     if (insurance) {
-      clinicians = await cliniciansApi.getByInsurance(
-        session.accessToken,
-        insurance
-      );
+      clinicians = await cliniciansDbApi.getByInsurance(insurance);
     } else if (acceptingNew) {
-      clinicians = await cliniciansApi.getAcceptingNew(session.accessToken);
+      clinicians = await cliniciansDbApi.getAcceptingNew();
     } else {
-      clinicians = await cliniciansApi.getAll(session.accessToken);
+      clinicians = await cliniciansDbApi.getAll();
     }
 
     return NextResponse.json(clinicians);
@@ -46,7 +42,7 @@ export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.accessToken) {
+    if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -60,13 +56,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const auth = new google.auth.OAuth2();
-    auth.setCredentials({ access_token: session.accessToken });
-    const sheets = google.sheets({ version: "v4", auth });
-    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID!;
-
-    const newClinician: Clinician = {
-      id: crypto.randomUUID(),
+    const newClinician = await cliniciansDbApi.create({
       firstName: body.firstName,
       lastName: body.lastName,
       email: body.email,
@@ -77,33 +67,10 @@ export async function POST(request: NextRequest) {
       newClientCapacity: body.newClientCapacity || 5,
       isAcceptingNew: body.isAcceptingNew !== false,
       defaultSessionLength: body.defaultSessionLength || 50,
-    };
-
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: "Clinicians!A:K",
-      valueInputOption: "USER_ENTERED",
-      requestBody: {
-        values: [
-          [
-            newClinician.id,
-            newClinician.firstName,
-            newClinician.lastName,
-            newClinician.email,
-            newClinician.calendarId || "",
-            newClinician.simplePracticeId || "",
-            JSON.stringify(newClinician.insurancePanels),
-            JSON.stringify(newClinician.specialties),
-            newClinician.newClientCapacity,
-            newClinician.isAcceptingNew ? "true" : "false",
-            newClinician.defaultSessionLength,
-          ],
-        ],
-      },
     });
 
     // Log the action
-    await auditLogApi.log(session.accessToken, {
+    await auditLogDbApi.log({
       userId: session.user?.email || "unknown",
       userEmail: session.user?.email || "unknown",
       action: "create",

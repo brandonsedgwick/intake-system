@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/auth-options";
-import { communicationsApi, clientsApi, auditLogApi } from "@/lib/api/google-sheets";
+import { clientsApi } from "@/lib/api/google-sheets";
+import { communicationsDbApi, auditLogDbApi } from "@/lib/api/prisma-db";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -18,16 +19,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
-    // Verify client exists
+    // Verify client exists (clients still in Google Sheets)
     const client = await clientsApi.getById(session.accessToken, id);
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
-    const communications = await communicationsApi.getByClientId(
-      session.accessToken,
-      id
-    );
+    // Communications now from SQLite
+    const communications = await communicationsDbApi.getByClientId(id);
 
     return NextResponse.json(communications);
   } catch (error) {
@@ -51,7 +50,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
     const body = await request.json();
 
-    // Verify client exists
+    // Verify client exists (clients still in Google Sheets)
     const client = await clientsApi.getById(session.accessToken, id);
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
@@ -65,7 +64,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const communication = await communicationsApi.create(session.accessToken, {
+    // Communications now stored in SQLite
+    const communication = await communicationsDbApi.create({
       clientId: id,
       timestamp: body.timestamp || new Date().toISOString(),
       direction: body.direction,
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     });
 
     // Log the action
-    await auditLogApi.log(session.accessToken, {
+    await auditLogDbApi.log({
       userId: session.user?.email || "unknown",
       userEmail: session.user?.email || "unknown",
       action: "create",

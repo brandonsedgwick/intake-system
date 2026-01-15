@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkAdminAccess } from "@/lib/auth/admin";
-import { evaluationCriteriaApi, auditLogApi } from "@/lib/api/google-sheets";
+import { evaluationCriteriaDbApi, auditLogDbApi } from "@/lib/api/prisma-db";
 import { EvaluationCriteria, Client } from "@/types/client";
 
 // GET /api/evaluation-criteria - Get all evaluation criteria (admin only)
@@ -12,7 +12,7 @@ export async function GET() {
       return NextResponse.json({ error }, { status: error === "Unauthorized" ? 401 : 403 });
     }
 
-    const criteria = await evaluationCriteriaApi.getAll(session!.accessToken!);
+    const criteria = await evaluationCriteriaDbApi.getAll();
 
     return NextResponse.json(criteria);
   } catch (error) {
@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const criteria = await evaluationCriteriaApi.create(session!.accessToken!, {
+    const criteria = await evaluationCriteriaDbApi.create({
       name: body.name,
       description: body.description,
       field: body.field,
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Log the action
-    await auditLogApi.log(session!.accessToken!, {
+    await auditLogDbApi.log({
       userId: session!.user?.email || "unknown",
       userEmail: session!.user?.email || "unknown",
       action: "create",
@@ -112,15 +112,11 @@ export async function PUT(request: NextRequest) {
     for (const item of body.criteria) {
       if (item.id) {
         // Update existing
-        const updated = await evaluationCriteriaApi.update(
-          session!.accessToken!,
-          item.id,
-          item
-        );
+        const updated = await evaluationCriteriaDbApi.update(item.id, item);
         if (updated) results.push(updated);
       } else {
         // Create new
-        const created = await evaluationCriteriaApi.create(session!.accessToken!, {
+        const created = await evaluationCriteriaDbApi.create({
           name: item.name,
           description: item.description,
           field: item.field,
@@ -135,7 +131,7 @@ export async function PUT(request: NextRequest) {
     }
 
     // Log the bulk action
-    await auditLogApi.log(session!.accessToken!, {
+    await auditLogDbApi.log({
       userId: session!.user?.email || "unknown",
       userEmail: session!.user?.email || "unknown",
       action: "bulk_update",

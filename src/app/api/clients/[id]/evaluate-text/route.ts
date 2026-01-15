@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/auth-options";
-import { clientsApi, auditLogApi, settingsApi } from "@/lib/api/google-sheets";
+import { clientsApi } from "@/lib/api/google-sheets";
+import { settingsDbApi, auditLogDbApi } from "@/lib/api/prisma-db";
 import {
   evaluateTextWithPatterns,
   getDefaultRulesWithIds,
@@ -11,10 +12,9 @@ import {
 } from "@/lib/services/text-evaluation";
 import {
   evaluateTextWithLLM,
-  createLLMEvaluationResult,
   shouldUseLLM,
 } from "@/lib/services/vertex-ai";
-import { TextEvaluationResult, TextEvaluationSeverity } from "@/types/client";
+import { TextEvaluationResult } from "@/types/client";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
-    // Fetch client
+    // Fetch client (still from Google Sheets)
     const client = await clientsApi.getById(session.accessToken, id);
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
@@ -67,8 +67,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       });
     }
 
-    // Fetch LLM settings from database
-    const llmSettings = await settingsApi.getLLMSettings(session.accessToken);
+    // Fetch LLM settings from SQLite
+    const llmSettings = await settingsDbApi.getLLMSettings();
 
     // Get evaluation rules (use defaults for now, later can load from sheet)
     const rules = getDefaultRulesWithIds();
@@ -104,13 +104,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       finalResult = createPatternEvaluationResult(patternResult.flags);
     }
 
-    // Store result in client record
+    // Store result in client record (still in Google Sheets)
     const updatedClient = await clientsApi.update(session.accessToken, id, {
       textEvaluationResult: JSON.stringify(finalResult),
     });
 
-    // Log the evaluation
-    await auditLogApi.log(session.accessToken, {
+    // Log the evaluation to SQLite
+    await auditLogDbApi.log({
       userId: session.user?.email || "unknown",
       userEmail: session.user?.email || "unknown",
       action: "text_evaluate",
@@ -154,7 +154,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
-    // Fetch client
+    // Fetch client (still from Google Sheets)
     const client = await clientsApi.getById(session.accessToken, id);
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });

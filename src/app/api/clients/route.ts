@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/auth-options";
-import { clientsApi, auditLogApi } from "@/lib/api/google-sheets";
+import { clientsApi } from "@/lib/api/google-sheets";
+import { auditLogDbApi } from "@/lib/api/prisma-db";
 import { Client } from "@/types/client";
 import { google } from "googleapis";
 
@@ -78,7 +79,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Log the action
-    await auditLogApi.log(session.accessToken, {
+    await auditLogDbApi.log({
       userId: session.user?.email || "unknown",
       userEmail: session.user?.email || "unknown",
       action: "create",
@@ -159,7 +160,7 @@ export async function DELETE() {
       });
 
       // Log the action
-      await auditLogApi.log(session.accessToken, {
+      await auditLogDbApi.log({
         userId: session.user?.email || "unknown",
         userEmail: session.user?.email || "unknown",
         action: "delete_all",

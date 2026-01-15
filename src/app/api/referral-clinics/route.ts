@@ -1,29 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkAdminAccess } from "@/lib/auth/admin";
-import { referralClinicsApi, auditLogApi } from "@/lib/api/google-sheets";
+import { referralClinicsDbApi, auditLogDbApi } from "@/lib/api/prisma-db";
 
 // GET /api/referral-clinics - Get all referral clinics
 export async function GET() {
   try {
-    const { isAdmin, session, error } = await checkAdminAccess();
+    const { isAdmin, error } = await checkAdminAccess();
 
     if (!isAdmin) {
       return NextResponse.json({ error }, { status: error === "Unauthorized" ? 401 : 403 });
     }
 
-    console.log("[referral-clinics] Fetching clinics...");
-    const clinics = await referralClinicsApi.getAll(session!.accessToken!);
-    console.log("[referral-clinics] Found clinics:", clinics.length, clinics.map(c => ({ id: c.id, name: c.practiceName, isActive: c.isActive })));
+    const clinics = await referralClinicsDbApi.getAll();
 
     return NextResponse.json(clinics);
   } catch (error) {
     console.error("Error fetching referral clinics:", error);
     const errorMessage = error instanceof Error ? error.message : "Failed to fetch referral clinics";
-
-    // Check if the sheet doesn't exist - return empty array instead of error
-    if (errorMessage.includes("Unable to parse range") || errorMessage.includes("not found")) {
-      return NextResponse.json([]);
-    }
 
     return NextResponse.json(
       { error: errorMessage },
@@ -51,7 +44,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const clinic = await referralClinicsApi.create(session!.accessToken!, {
+    const clinic = await referralClinicsDbApi.create({
       practiceName: body.practiceName,
       address: body.address,
       phone: body.phone,
@@ -63,7 +56,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Log the action
-    await auditLogApi.log(session!.accessToken!, {
+    await auditLogDbApi.log({
       userId: session!.user?.email || "unknown",
       userEmail: session!.user?.email || "unknown",
       action: "create",
@@ -76,14 +69,6 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Error creating referral clinic:", error);
     const errorMessage = error instanceof Error ? error.message : "Failed to create referral clinic";
-
-    // Check if the sheet doesn't exist
-    if (errorMessage.includes("Unable to parse range") || errorMessage.includes("not found")) {
-      return NextResponse.json(
-        { error: "ReferralClinics sheet not found. Please run Sheets Setup from Settings to create the required sheets." },
-        { status: 400 }
-      );
-    }
 
     return NextResponse.json(
       { error: errorMessage },

@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkAdminAccess } from "@/lib/auth/admin";
-import { referralClinicsConfigApi, auditLogApi } from "@/lib/api/google-sheets";
+import { referralClinicsConfigDbApi, auditLogDbApi } from "@/lib/api/prisma-db";
 
 // GET /api/referral-clinics/config - Get referral clinics config (custom fields)
 export async function GET() {
   try {
-    const { isAdmin, session, error } = await checkAdminAccess();
+    const { isAdmin, error } = await checkAdminAccess();
 
     if (!isAdmin) {
       return NextResponse.json({ error }, { status: error === "Unauthorized" ? 401 : 403 });
     }
 
-    const config = await referralClinicsConfigApi.getConfig(session!.accessToken!);
+    const config = await referralClinicsConfigDbApi.getConfig();
 
     return NextResponse.json(config);
   } catch (error) {
@@ -42,15 +42,14 @@ export async function PUT(request: NextRequest) {
     }
 
     // Get previous config for audit
-    const previousConfig = await referralClinicsConfigApi.getConfig(session!.accessToken!);
+    const previousConfig = await referralClinicsConfigDbApi.getConfig();
 
-    const updatedConfig = await referralClinicsConfigApi.saveCustomFields(
-      session!.accessToken!,
+    const updatedConfig = await referralClinicsConfigDbApi.saveCustomFields(
       body.customFields
     );
 
     // Log the action
-    await auditLogApi.log(session!.accessToken!, {
+    await auditLogDbApi.log({
       userId: session!.user?.email || "unknown",
       userEmail: session!.user?.email || "unknown",
       action: "update",
