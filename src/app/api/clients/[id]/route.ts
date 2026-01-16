@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/auth-options";
-import { clientsApi } from "@/lib/api/google-sheets";
-import { auditLogDbApi } from "@/lib/api/prisma-db";
+import { clientsDbApi, auditLogDbApi } from "@/lib/api/prisma-db";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -13,12 +12,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.accessToken) {
+    if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { id } = await params;
-    const client = await clientsApi.getById(session.accessToken, id);
+    const client = await clientsDbApi.getById(id);
 
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
@@ -39,7 +38,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.accessToken) {
+    if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -47,16 +46,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const body = await request.json();
 
     // Get existing client for audit log
-    const existingClient = await clientsApi.getById(session.accessToken, id);
+    const existingClient = await clientsDbApi.getById(id);
     if (!existingClient) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
-    const updatedClient = await clientsApi.update(
-      session.accessToken,
-      id,
-      body
-    );
+    const updatedClient = await clientsDbApi.update(id, body);
 
     if (!updatedClient) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });

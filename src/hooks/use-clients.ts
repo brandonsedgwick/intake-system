@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Client, Communication } from "@/types/client";
+import { Client, Communication, ClientStatus, CaseReopenHistory, ClosedFromWorkflow } from "@/types/client";
 
 // Fetch all clients
 export function useClients(status?: Client["status"]) {
@@ -199,5 +199,72 @@ export function useEvaluateClient() {
       queryClient.invalidateQueries({ queryKey: ["clients"] });
       queryClient.invalidateQueries({ queryKey: ["client", clientId] });
     },
+  });
+}
+
+// Fetch closed clients (optionally by workflow)
+export function useClosedClients(workflow?: ClosedFromWorkflow) {
+  return useQuery<Client[]>({
+    queryKey: ["clients", "closed", workflow],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (workflow) params.set("workflow", workflow);
+
+      const response = await fetch(`/api/clients/closed?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error("Failed to fetch closed clients");
+      }
+      return response.json();
+    },
+  });
+}
+
+// Reopen a closed case
+export function useReopenClient() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      clientId,
+      reason,
+      newStatus,
+    }: {
+      clientId: string;
+      reason: string;
+      newStatus: ClientStatus;
+    }) => {
+      const response = await fetch(`/api/clients/${clientId}/reopen`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason, newStatus }),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to reopen case");
+      }
+      return response.json();
+    },
+    onSuccess: (_, variables) => {
+      // Invalidate all client-related queries
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+      queryClient.invalidateQueries({ queryKey: ["client", variables.clientId] });
+      queryClient.invalidateQueries({ queryKey: ["reopen-history", variables.clientId] });
+    },
+  });
+}
+
+// Fetch reopen history for a client
+export function useClientReopenHistory(clientId: string | null) {
+  return useQuery<CaseReopenHistory[]>({
+    queryKey: ["reopen-history", clientId],
+    queryFn: async () => {
+      if (!clientId) throw new Error("No client ID provided");
+      const response = await fetch(`/api/clients/${clientId}/reopen-history`);
+      if (!response.ok) {
+        throw new Error("Failed to fetch reopen history");
+      }
+      return response.json();
+    },
+    enabled: !!clientId,
   });
 }

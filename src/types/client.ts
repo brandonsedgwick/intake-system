@@ -17,6 +17,48 @@ export type ClientStatus =
   | "closed_other"
   | "duplicate";
 
+// Closed status helpers
+export const CLOSED_STATUSES: ClientStatus[] = [
+  "referred",
+  "closed_no_contact",
+  "closed_other",
+  "completed",
+  "duplicate",
+];
+
+export function isClosedStatus(status: ClientStatus): boolean {
+  return CLOSED_STATUSES.includes(status);
+}
+
+export type ClosedFromWorkflow = "evaluation" | "outreach" | "referral" | "scheduling" | "other";
+
+// Map workflows to their associated statuses
+export const WORKFLOW_STATUS_MAP: Record<ClosedFromWorkflow, ClientStatus[]> = {
+  evaluation: ["new", "pending_evaluation", "evaluation_complete", "evaluation_flagged"],
+  outreach: ["pending_outreach", "outreach_sent", "follow_up_1", "follow_up_2", "replied", "closed_no_contact"],
+  referral: ["pending_referral", "referred"],
+  scheduling: ["ready_to_schedule", "scheduled", "completed"],
+  other: ["duplicate", "closed_other"],
+};
+
+// Get non-closed statuses for reopen status selection
+export function getNonClosedStatuses(): ClientStatus[] {
+  return [
+    "new",
+    "pending_evaluation",
+    "evaluation_complete",
+    "evaluation_flagged",
+    "pending_outreach",
+    "outreach_sent",
+    "follow_up_1",
+    "follow_up_2",
+    "replied",
+    "ready_to_schedule",
+    "scheduled",
+    "pending_referral",
+  ];
+}
+
 export interface Client {
   id: string;
   createdAt: string;
@@ -70,9 +112,15 @@ export interface Client {
   simplePracticeId?: string;
   paperworkComplete?: boolean;
 
+  // Referral
+  referralEmailSentAt?: string;
+  referralClinicNames?: string; // Comma-separated list of clinic names
+
   // Closure
   closedDate?: string;
   closedReason?: string;
+  closedFromWorkflow?: "evaluation" | "outreach" | "referral" | "scheduling" | "other";
+  closedFromStatus?: ClientStatus;
 }
 
 export interface Communication {
@@ -292,4 +340,21 @@ export interface ReferralClinic {
 export interface ReferralClinicsConfig {
   customFields: ReferralClinicCustomField[];
   updatedAt: string;
+}
+
+// ============================================
+// Case Reopen History Types
+// ============================================
+
+export interface CaseReopenHistory {
+  id: string;
+  clientId: string;
+  reopenedAt: string;
+  reopenedBy: string;
+  reopenReason: string;
+  previousStatus: ClientStatus;
+  newStatus: ClientStatus;
+  closedDate?: string;
+  closedReason?: string;
+  closedFromWorkflow?: ClosedFromWorkflow;
 }

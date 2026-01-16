@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/auth-options";
-import { clientsApi } from "@/lib/api/google-sheets";
-import { communicationsDbApi, auditLogDbApi } from "@/lib/api/prisma-db";
+import { clientsDbApi, communicationsDbApi, auditLogDbApi } from "@/lib/api/prisma-db";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -13,19 +12,19 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.accessToken) {
+    if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { id } = await params;
 
-    // Verify client exists (clients still in Google Sheets)
-    const client = await clientsApi.getById(session.accessToken, id);
+    // Verify client exists
+    const client = await clientsDbApi.getById(id);
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
-    // Communications now from SQLite
+    // Get communications for client
     const communications = await communicationsDbApi.getByClientId(id);
 
     return NextResponse.json(communications);
@@ -43,15 +42,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.accessToken) {
+    if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { id } = await params;
     const body = await request.json();
 
-    // Verify client exists (clients still in Google Sheets)
-    const client = await clientsApi.getById(session.accessToken, id);
+    // Verify client exists
+    const client = await clientsDbApi.getById(id);
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
@@ -64,7 +63,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Communications now stored in SQLite
+    // Create communication record
     const communication = await communicationsDbApi.create({
       clientId: id,
       timestamp: body.timestamp || new Date().toISOString(),

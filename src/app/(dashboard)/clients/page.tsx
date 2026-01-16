@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useClients } from "@/hooks/use-clients";
-import { Client, ClientStatus } from "@/types/client";
+import { Client, ClientStatus, isClosedStatus, CLOSED_STATUSES } from "@/types/client";
+import { ReopenCaseModal } from "@/components/clients/reopen-case-modal";
 import { formatRelativeTime } from "@/lib/utils";
 import Link from "next/link";
 import {
@@ -18,6 +19,8 @@ import {
   CheckCircle,
   XCircle,
   UserPlus,
+  RotateCcw,
+  Archive,
 } from "lucide-react";
 
 const STATUS_CONFIG: Record<
@@ -123,15 +126,32 @@ function StatusBadge({ status }: { status: ClientStatus }) {
   );
 }
 
-function ClientRow({ client }: { client: Client }) {
+// Workflow badge for closed clients
+const WORKFLOW_LABELS: Record<string, { label: string; color: string }> = {
+  evaluation: { label: "Evaluation", color: "bg-yellow-100 text-yellow-700" },
+  outreach: { label: "Outreach", color: "bg-purple-100 text-purple-700" },
+  referral: { label: "Referral", color: "bg-amber-100 text-amber-700" },
+  scheduling: { label: "Scheduling", color: "bg-teal-100 text-teal-700" },
+  other: { label: "Other", color: "bg-gray-100 text-gray-600" },
+};
+
+function ClientRow({
+  client,
+  onReopenClick,
+}: {
+  client: Client;
+  onReopenClick?: (client: Client) => void;
+}) {
+  const isClosed = isClosedStatus(client.status);
+
   return (
-    <Link
-      href={`/clients/${client.id}`}
-      className="block hover:bg-gray-50 transition-colors"
-    >
-      <div className="px-6 py-4 flex items-center justify-between">
+    <div className="hover:bg-gray-50 transition-colors flex items-center">
+      <Link
+        href={`/clients/${client.id}`}
+        className="flex-1 px-6 py-4 flex items-center justify-between"
+      >
         <div className="flex items-center gap-4">
-          <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-medium">
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center font-medium ${isClosed ? "bg-gray-100 text-gray-500" : "bg-blue-100 text-blue-600"}`}>
             {client.firstName[0]}
             {client.lastName[0]}
           </div>
@@ -154,27 +174,47 @@ function ClientRow({ client }: { client: Client }) {
           </div>
         </div>
 
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-4">
           {client.requestedClinician && (
             <div className="text-sm text-gray-600">
               <span className="text-gray-400">Preferred:</span> {client.requestedClinician}
             </div>
           )}
           <StatusBadge status={client.status} />
+          {/* Show workflow badge for closed clients */}
+          {isClosed && client.closedFromWorkflow && (
+            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${WORKFLOW_LABELS[client.closedFromWorkflow]?.color || WORKFLOW_LABELS.other.color}`}>
+              {WORKFLOW_LABELS[client.closedFromWorkflow]?.label || "Unknown"}
+            </span>
+          )}
           <div className="text-sm text-gray-500">
             {formatRelativeTime(client.createdAt)}
           </div>
           <ChevronRight className="w-5 h-5 text-gray-400" />
         </div>
-      </div>
-    </Link>
+      </Link>
+      {/* Reopen button for closed clients */}
+      {isClosed && onReopenClick && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onReopenClick(client);
+          }}
+          className="mr-4 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-1.5"
+        >
+          <RotateCcw className="w-4 h-4" />
+          Reopen
+        </button>
+      )}
+    </div>
   );
 }
 
 export default function ClientsPage() {
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<ClientStatus | "all">("all");
-  const { data: clients, isLoading, error } = useClients();
+  const [statusFilter, setStatusFilter] = useState<ClientStatus | "all" | "closed">("all");
+  const [reopenClient, setReopenClient] = useState<Client | null>(null);
+  const { data: clients, isLoading, error, refetch } = useClients();
 
   // Filter clients based on search and status
   const filteredClients = clients?.filter((client) => {
@@ -185,8 +225,13 @@ export default function ClientsPage() {
         .includes(searchQuery.toLowerCase()) ||
       client.email.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesStatus =
-      statusFilter === "all" || client.status === statusFilter;
+    // Handle special "closed" filter
+    let matchesStatus = true;
+    if (statusFilter === "closed") {
+      matchesStatus = isClosedStatus(client.status);
+    } else if (statusFilter !== "all") {
+      matchesStatus = client.status === statusFilter;
+    }
 
     return matchesSearch && matchesStatus;
   });
@@ -199,6 +244,9 @@ export default function ClientsPage() {
     },
     {} as Record<string, number>
   );
+
+  // Count closed clients
+  const closedCount = clients?.filter((c) => isClosedStatus(c.status)).length || 0;
 
   if (error) {
     return (
@@ -228,7 +276,7 @@ export default function ClientsPage() {
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-6 gap-4 mb-6">
         <div className="bg-blue-50 rounded-lg p-4">
           <div className="text-2xl font-bold text-blue-600">
             {statusCounts?.new || 0}
@@ -259,6 +307,18 @@ export default function ClientsPage() {
           </div>
           <div className="text-sm text-teal-800">Ready to Schedule</div>
         </div>
+        <button
+          onClick={() => setStatusFilter("closed")}
+          className={`rounded-lg p-4 text-left transition-colors ${statusFilter === "closed" ? "bg-gray-200 ring-2 ring-gray-400" : "bg-gray-50 hover:bg-gray-100"}`}
+        >
+          <div className="text-2xl font-bold text-gray-600">
+            {closedCount}
+          </div>
+          <div className="text-sm text-gray-700 flex items-center gap-1">
+            <Archive className="w-3 h-3" />
+            Closed
+          </div>
+        </button>
       </div>
 
       {/* Filters */}
@@ -279,16 +339,30 @@ export default function ClientsPage() {
             <select
               value={statusFilter}
               onChange={(e) =>
-                setStatusFilter(e.target.value as ClientStatus | "all")
+                setStatusFilter(e.target.value as ClientStatus | "all" | "closed")
               }
               className="border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="all">All Statuses</option>
-              {Object.entries(STATUS_CONFIG).map(([value, config]) => (
-                <option key={value} value={value}>
-                  {config.label}
-                </option>
-              ))}
+              <option value="closed">All Closed ({closedCount})</option>
+              <optgroup label="Active Statuses">
+                {Object.entries(STATUS_CONFIG)
+                  .filter(([value]) => !CLOSED_STATUSES.includes(value as ClientStatus))
+                  .map(([value, config]) => (
+                    <option key={value} value={value}>
+                      {config.label}
+                    </option>
+                  ))}
+              </optgroup>
+              <optgroup label="Closed Statuses">
+                {Object.entries(STATUS_CONFIG)
+                  .filter(([value]) => CLOSED_STATUSES.includes(value as ClientStatus))
+                  .map(([value, config]) => (
+                    <option key={value} value={value}>
+                      {config.label}
+                    </option>
+                  ))}
+              </optgroup>
             </select>
           </div>
         </div>
@@ -308,11 +382,27 @@ export default function ClientsPage() {
         ) : (
           <div className="divide-y">
             {filteredClients?.map((client) => (
-              <ClientRow key={client.id} client={client} />
+              <ClientRow
+                key={client.id}
+                client={client}
+                onReopenClick={
+                  isClosedStatus(client.status) ? setReopenClient : undefined
+                }
+              />
             ))}
           </div>
         )}
       </div>
+
+      {/* Reopen Case Modal */}
+      {reopenClient && (
+        <ReopenCaseModal
+          client={reopenClient}
+          isOpen={!!reopenClient}
+          onClose={() => setReopenClient(null)}
+          onSuccess={refetch}
+        />
+      )}
     </div>
   );
 }

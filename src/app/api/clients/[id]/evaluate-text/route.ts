@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/auth-options";
-import { clientsApi } from "@/lib/api/google-sheets";
-import { settingsDbApi, auditLogDbApi } from "@/lib/api/prisma-db";
+import { clientsDbApi, settingsDbApi, auditLogDbApi } from "@/lib/api/prisma-db";
 import {
   evaluateTextWithPatterns,
   getDefaultRulesWithIds,
@@ -30,14 +29,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.accessToken) {
+    if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { id } = await params;
 
-    // Fetch client (still from Google Sheets)
-    const client = await clientsApi.getById(session.accessToken, id);
+    // Fetch client
+    const client = await clientsDbApi.getById(id);
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
@@ -104,12 +103,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       finalResult = createPatternEvaluationResult(patternResult.flags);
     }
 
-    // Store result in client record (still in Google Sheets)
-    const updatedClient = await clientsApi.update(session.accessToken, id, {
+    // Store result in client record
+    const updatedClient = await clientsDbApi.update(id, {
       textEvaluationResult: JSON.stringify(finalResult),
     });
 
-    // Log the evaluation to SQLite
+    // Log the evaluation
     await auditLogDbApi.log({
       userId: session.user?.email || "unknown",
       userEmail: session.user?.email || "unknown",
@@ -148,14 +147,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.accessToken) {
+    if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { id } = await params;
 
-    // Fetch client (still from Google Sheets)
-    const client = await clientsApi.getById(session.accessToken, id);
+    // Fetch client
+    const client = await clientsDbApi.getById(id);
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }

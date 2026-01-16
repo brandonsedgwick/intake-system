@@ -1,49 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/auth-options";
-import { google } from "googleapis";
-import { clientsApi } from "@/lib/api/google-sheets";
-import { communicationsDbApi, auditLogDbApi } from "@/lib/api/prisma-db";
+import { sendEmail, EmailAttachment } from "@/lib/services/gmail";
+import { clientsDbApi, communicationsDbApi, auditLogDbApi } from "@/lib/api/prisma-db";
 import { ClientStatus } from "@/types/client";
-
-// Helper to create a raw email for Gmail API
-function createRawEmail(
-  to: string,
-  from: string,
-  subject: string,
-  body: string
-): string {
-  const emailLines = [
-    `From: ${from}`,
-    `To: ${to}`,
-    `Subject: ${subject}`,
-    "MIME-Version: 1.0",
-    'Content-Type: text/plain; charset="UTF-8"',
-    "",
-    body,
-  ];
-
-  const email = emailLines.join("\r\n");
-
-  // Base64 encode the email (URL-safe)
-  return Buffer.from(email)
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-}
 
 // POST /api/emails/send - Send an email via Gmail API
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.accessToken) {
+    if (!session?.accessToken || !session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await request.json();
-    const { clientId, to, from, subject, body: emailBody, templateType } = body;
+    const {
+      clientId,
+      to,
+      from,
+      cc,
+      bcc,
+      subject,
+      body: emailBody,
+      bodyFormat = "html",
+      templateType,
+      attachments,
+    } = body;
 
     if (!clientId || !to || !subject || !emailBody) {
       return NextResponse.json(
@@ -52,36 +35,38 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verify client exists (still from Google Sheets)
-    const client = await clientsApi.getById(session.accessToken, clientId);
+    // Verify client exists
+    const client = await clientsDbApi.getById(clientId);
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
-    // Initialize Gmail API
-    const auth = new google.auth.OAuth2();
-    auth.setCredentials({ access_token: session.accessToken });
-    const gmail = google.gmail({ version: "v1", auth });
+    // Parse CC and BCC into arrays
+    const ccArray = cc ? (Array.isArray(cc) ? cc : cc.split(",").map((e: string) => e.trim()).filter(Boolean)) : undefined;
+    const bccArray = bcc ? (Array.isArray(bcc) ? bcc : bcc.split(",").map((e: string) => e.trim()).filter(Boolean)) : undefined;
 
-    // Create and send the email
-    const rawEmail = createRawEmail(
+    // Send email using Gmail service
+    const result = await sendEmail(session.accessToken, {
       to,
-      from || session.user?.email || "intake@practice.com",
+      from: from || session.user?.email || "intake@practice.com",
+      cc: ccArray,
+      bcc: bccArray,
       subject,
-      emailBody
-    );
-
-    const response = await gmail.users.messages.send({
-      userId: "me",
-      requestBody: {
-        raw: rawEmail,
-      },
+      body: emailBody,
+      bodyFormat: bodyFormat as "html" | "plain",
+      attachments: attachments as EmailAttachment[] | undefined,
     });
 
-    const messageId = response.data.id;
-    const threadId = response.data.threadId;
+    if (!result.success) {
+      return NextResponse.json(
+        { error: result.error || "Failed to send email" },
+        { status: 500 }
+      );
+    }
 
-    // Record the communication in SQLite
+    const { messageId, threadId } = result;
+
+    // Record the communication
     await communicationsDbApi.create({
       clientId,
       timestamp: new Date().toISOString(),
@@ -90,12 +75,12 @@ export async function POST(request: NextRequest) {
       gmailMessageId: messageId || undefined,
       gmailThreadId: threadId || undefined,
       subject,
-      bodyPreview: emailBody.substring(0, 200),
+      bodyPreview: emailBody.replace(/<[^>]*>/g, "").substring(0, 200),
       fullBody: emailBody,
       sentBy: session.user?.email || undefined,
     });
 
-    // Update client status based on template type (still in Google Sheets)
+    // Update client status based on template type
     let newStatus: ClientStatus | null = null;
     let updateFields: Record<string, string | null> = {};
 
@@ -115,6 +100,7 @@ export async function POST(request: NextRequest) {
       case "referral_insurance":
       case "referral_specialty":
       case "referral_capacity":
+      case "referral":
         newStatus = "referred";
         updateFields.closedDate = new Date().toISOString();
         updateFields.closedReason = templateType;
@@ -122,13 +108,13 @@ export async function POST(request: NextRequest) {
     }
 
     if (newStatus) {
-      await clientsApi.update(session.accessToken, clientId, {
+      await clientsDbApi.update(clientId, {
         status: newStatus,
         ...updateFields,
       });
     }
 
-    // Log the action to SQLite
+    // Log the action
     await auditLogDbApi.log({
       userId: session.user?.email || "unknown",
       userEmail: session.user?.email || "unknown",
@@ -152,7 +138,6 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Error sending email:", error);
 
-    // Check for specific Gmail API errors
     const errorMessage =
       error instanceof Error ? error.message : "Failed to send email";
 

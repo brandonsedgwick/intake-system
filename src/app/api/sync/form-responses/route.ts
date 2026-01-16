@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/auth-options";
 import { google } from "googleapis";
+import { clientsDbApi } from "@/lib/api/prisma-db";
 import { Client } from "@/types/client";
 
 // Form field to Client field mapping
@@ -50,7 +51,7 @@ export async function GET() {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.accessToken) {
+    if (!session?.accessToken || !session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -59,7 +60,7 @@ export async function GET() {
     const sheets = google.sheets({ version: "v4", auth });
     const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID!;
 
-    // Get form responses
+    // Get form responses from Google Sheets
     let formResponsesCount = 0;
     let formTimestamps: string[] = [];
     try {
@@ -79,30 +80,14 @@ export async function GET() {
       // Sheet might not exist
     }
 
-    // Get existing clients to check what's already synced
-    let clientsCount = 0;
-    const existingTimestamps = new Set<string>();
-    try {
-      const clients = await sheets.spreadsheets.values.get({
-        spreadsheetId,
-        range: "Clients!A:Z",
-      });
-      const rows = clients.data.values || [];
-      if (rows.length > 1) {
-        clientsCount = rows.length - 1;
-        const headers = rows[0];
-        const formTimestampIndex = headers.indexOf("formTimestamp");
-
-        for (let i = 1; i < rows.length; i++) {
-          const row = rows[i];
-          if (formTimestampIndex >= 0 && row[formTimestampIndex]) {
-            existingTimestamps.add(row[formTimestampIndex].trim());
-          }
-        }
-      }
-    } catch {
-      // Sheet might not exist
-    }
+    // Get existing clients from SQLite to check what's already synced
+    const existingClients = await clientsDbApi.getAll();
+    const clientsCount = existingClients.length;
+    const existingTimestamps = new Set<string>(
+      existingClients
+        .filter((c) => c.formTimestamp)
+        .map((c) => c.formTimestamp!)
+    );
 
     // Count how many form responses are NOT yet synced (by timestamp - the unique identifier)
     let pendingSync = 0;
@@ -133,7 +118,7 @@ export async function POST() {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.accessToken) {
+    if (!session?.accessToken || !session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -149,7 +134,7 @@ export async function POST() {
       syncedIds: [],
     };
 
-    // Get form responses
+    // Get form responses from Google Sheets
     let formResponses: string[][];
     try {
       const response = await sheets.spreadsheets.values.get({
@@ -186,30 +171,15 @@ export async function POST() {
     // Log the mapping for debugging
     console.log("Header mapping:", Object.fromEntries(headerMapping));
 
-    // Get existing clients to check for already synced entries
-    const existingClientsResponse = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: "Clients!A:Z",
-    });
-    const existingRows = existingClientsResponse.data.values || [];
-    const clientHeaders = existingRows[0] || [];
-
-    // Build lookup of existing timestamps (the unique identifier from Google Forms)
-    const existingTimestamps = new Set<string>();
-    if (existingRows.length > 1) {
-      const formTimestampIndex = clientHeaders.indexOf("formTimestamp");
-      for (let i = 1; i < existingRows.length; i++) {
-        const row = existingRows[i];
-        if (formTimestampIndex >= 0 && row[formTimestampIndex]) {
-          existingTimestamps.add(row[formTimestampIndex].trim());
-        }
-      }
-    }
+    // Get existing clients from SQLite to check for already synced entries
+    const existingClients = await clientsDbApi.getAll();
+    const existingTimestamps = new Set<string>(
+      existingClients
+        .filter((c) => c.formTimestamp)
+        .map((c) => c.formTimestamp!)
+    );
 
     // Process each form response
-    const newClients: (string | null)[][] = [];
-    const now = new Date().toISOString();
-
     for (let rowIndex = 0; rowIndex < formDataRows.length; rowIndex++) {
       const formRow = formDataRows[rowIndex];
 
@@ -228,9 +198,6 @@ export async function POST() {
 
       // Map form fields to client fields using our header mapping
       const clientData: Partial<Client> = {
-        id: crypto.randomUUID(),
-        createdAt: now,
-        updatedAt: now,
         status: "new",
         source: "google_form",
         formResponseId: `row-${rowIndex + 2}`,
@@ -252,66 +219,32 @@ export async function POST() {
         continue;
       }
 
-      // This is a new client - add to batch
-      result.newClients++;
+      // Create the client in SQLite
+      try {
+        await clientsDbApi.create({
+          status: clientData.status as Client["status"],
+          source: clientData.source as Client["source"],
+          formResponseId: clientData.formResponseId,
+          formTimestamp: clientData.formTimestamp,
+          firstName: clientData.firstName,
+          lastName: clientData.lastName,
+          email: clientData.email,
+          phone: clientData.phone,
+          age: clientData.age,
+          paymentType: clientData.paymentType,
+          requestedClinician: clientData.requestedClinician,
+          presentingConcerns: clientData.presentingConcerns,
+          suicideAttemptRecent: clientData.suicideAttemptRecent,
+          psychiatricHospitalization: clientData.psychiatricHospitalization,
+          additionalInfo: clientData.additionalInfo,
+        });
 
-      // Add timestamp to our in-memory set to prevent duplicates within this batch
-      existingTimestamps.add(formTimestamp);
-
-      // Build row for Clients sheet
-      // Must match the order in SHEET_CONFIGS.Clients
-      const clientRow: (string | null)[] = [
-        clientData.id || null,
-        clientData.createdAt || null,
-        clientData.updatedAt || null,
-        clientData.status || null,
-        clientData.source || null,
-        clientData.formResponseId || null,
-        clientData.formTimestamp || null,
-        clientData.firstName || null,
-        clientData.lastName || null,
-        clientData.email || null,
-        clientData.phone || null,
-        clientData.age || null,
-        clientData.paymentType || null,
-        null, // insuranceProvider
-        null, // insuranceMemberId
-        clientData.requestedClinician || null,
-        null, // assignedClinician
-        clientData.presentingConcerns || null,
-        clientData.suicideAttemptRecent || null,
-        clientData.psychiatricHospitalization || null,
-        clientData.additionalInfo || null,
-        null, // evaluationScore
-        null, // evaluationNotes
-        null, // referralReason
-        "false", // isDuplicate
-        null, // duplicateOfClientId
-        null, // initialOutreachDate
-        null, // followUp1Date
-        null, // followUp2Date
-        null, // nextFollowUpDue
-        null, // scheduledDate
-        null, // simplePracticeId
-        "false", // paperworkComplete
-        null, // closedDate
-        null, // closedReason
-      ];
-
-      newClients.push(clientRow);
-      result.syncedIds.push(formTimestamp);
-    }
-
-    // Append new clients to sheet
-    if (newClients.length > 0) {
-      await sheets.spreadsheets.values.append({
-        spreadsheetId,
-        range: "Clients!A:Z",
-        valueInputOption: "USER_ENTERED",
-        requestBody: {
-          values: newClients,
-        },
-      });
+        result.newClients++;
+        existingTimestamps.add(formTimestamp);
+        result.syncedIds.push(formTimestamp);
+      } catch (err) {
+        result.errors.push(`Row ${rowIndex + 2}: Failed to create client - ${err}`);
+      }
     }
 
     return NextResponse.json({

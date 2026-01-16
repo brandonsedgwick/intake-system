@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/auth-options";
-import { clientsApi } from "@/lib/api/google-sheets";
-import { auditLogDbApi } from "@/lib/api/prisma-db";
+import { clientsDbApi, auditLogDbApi } from "@/lib/api/prisma-db";
 import { Client } from "@/types/client";
-import { google } from "googleapis";
 
 // GET /api/clients - Get all clients or filter by status
 export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.accessToken) {
+    if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -22,11 +20,11 @@ export async function GET(request: NextRequest) {
     let clients: Client[];
 
     if (followUpsDue) {
-      clients = await clientsApi.getFollowUpsDue(session.accessToken);
+      clients = await clientsDbApi.getFollowUpsDue();
     } else if (status) {
-      clients = await clientsApi.getByStatus(session.accessToken, status);
+      clients = await clientsDbApi.getByStatus(status);
     } else {
-      clients = await clientsApi.getAll(session.accessToken);
+      clients = await clientsDbApi.getAll();
     }
 
     return NextResponse.json(clients);
@@ -44,7 +42,7 @@ export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.accessToken) {
+    if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -58,7 +56,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const client = await clientsApi.create(session.accessToken, {
+    const client = await clientsDbApi.create({
       status: body.status || "new",
       source: body.source || "manual",
       firstName: body.firstName,
@@ -103,62 +101,13 @@ export async function DELETE() {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.accessToken) {
+    if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const auth = new google.auth.OAuth2();
-    auth.setCredentials({ access_token: session.accessToken });
-    const sheets = google.sheets({ version: "v4", auth });
-    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID!;
-
-    // Get spreadsheet to find the Clients sheet ID
-    const spreadsheet = await sheets.spreadsheets.get({
-      spreadsheetId,
-    });
-
-    const clientsSheet = spreadsheet.data.sheets?.find(
-      (s) => s.properties?.title === "Clients"
-    );
-
-    if (!clientsSheet?.properties?.sheetId) {
-      return NextResponse.json(
-        { error: "Clients sheet not found" },
-        { status: 404 }
-      );
-    }
-
-    const sheetId = clientsSheet.properties.sheetId;
-
-    // Get current data to count rows
-    const currentData = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: "Clients!A:A",
-    });
-
-    const rowCount = currentData.data.values?.length || 0;
-    const deletedCount = rowCount > 1 ? rowCount - 1 : 0;
+    const deletedCount = await clientsDbApi.deleteAll();
 
     if (deletedCount > 0) {
-      // Delete all data rows (keep header row 0, delete from row 1 onwards)
-      await sheets.spreadsheets.batchUpdate({
-        spreadsheetId,
-        requestBody: {
-          requests: [
-            {
-              deleteDimension: {
-                range: {
-                  sheetId: sheetId,
-                  dimension: "ROWS",
-                  startIndex: 1, // Start after header (0-indexed)
-                  endIndex: rowCount, // Delete up to and including the last row
-                },
-              },
-            },
-          ],
-        },
-      });
-
       // Log the action
       await auditLogDbApi.log({
         userId: session.user?.email || "unknown",

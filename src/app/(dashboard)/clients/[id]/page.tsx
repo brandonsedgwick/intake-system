@@ -1,8 +1,9 @@
 "use client";
 
 import { use, useState } from "react";
-import { useClient, useClientCommunications, useUpdateClient } from "@/hooks/use-clients";
-import { ClientStatus, EmailTemplate, TextEvaluationResult, TextEvaluationSeverity, TextEvaluationCategory } from "@/types/client";
+import { useClient, useClientCommunications, useUpdateClient, useClientReopenHistory } from "@/hooks/use-clients";
+import { ClientStatus, EmailTemplate, TextEvaluationResult, TextEvaluationSeverity, TextEvaluationCategory, isClosedStatus, ClosedFromWorkflow } from "@/types/client";
+import { ReopenCaseModal } from "@/components/clients/reopen-case-modal";
 import { formatDateTime, formatDate } from "@/lib/utils";
 import { EmailPreviewModal } from "@/components/emails/email-preview-modal";
 import Link from "next/link";
@@ -22,6 +23,9 @@ import {
   MessageSquare,
   ArrowUpRight,
   ArrowDownLeft,
+  RotateCcw,
+  XCircle,
+  Archive,
 } from "lucide-react";
 import { ClientActionButtons } from "@/components/clients/client-action-buttons";
 
@@ -73,6 +77,15 @@ const STATUS_CONFIG: Record<
   duplicate: { label: "Duplicate", color: "text-orange-700", bgColor: "bg-orange-100" },
 };
 
+// Workflow labels for closed case display
+const WORKFLOW_LABELS: Record<ClosedFromWorkflow, string> = {
+  evaluation: "Evaluation",
+  outreach: "Outreach",
+  referral: "Referral",
+  scheduling: "Scheduling",
+  other: "Other",
+};
+
 interface PageProps {
   params: Promise<{ id: string }>;
 }
@@ -86,6 +99,12 @@ export default function ClientDetailPage({ params }: PageProps) {
   // Email modal state
   const [emailModalOpen, setEmailModalOpen] = useState(false);
   const [emailTemplateType, setEmailTemplateType] = useState<EmailTemplate["type"]>("initial_outreach");
+
+  // Reopen modal state
+  const [reopenModalOpen, setReopenModalOpen] = useState(false);
+
+  // Fetch reopen history for timeline
+  const { data: reopenHistory } = useClientReopenHistory(id);
 
   const openEmailModal = (templateType: EmailTemplate["type"]) => {
     setEmailTemplateType(templateType);
@@ -256,13 +275,25 @@ export default function ClientDetailPage({ params }: PageProps) {
           </div>
 
           <div className="flex items-center gap-3">
-            <ClientActionButtons
-              client={client}
-              variant="full"
-              showAllActions
-            />
-            <div className="h-6 w-px bg-gray-200" />
-            {getActionButtons()}
+            {isClosedStatus(client.status) ? (
+              <button
+                onClick={() => setReopenModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                <RotateCcw className="w-4 h-4" />
+                Reopen Case
+              </button>
+            ) : (
+              <>
+                <ClientActionButtons
+                  client={client}
+                  variant="full"
+                  showAllActions
+                />
+                <div className="h-6 w-px bg-gray-200" />
+                {getActionButtons()}
+              </>
+            )}
             <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
               <Edit className="w-5 h-5" />
             </button>
@@ -276,6 +307,59 @@ export default function ClientDetailPage({ params }: PageProps) {
       <div className="grid grid-cols-3 gap-6">
         {/* Left Column - Client Info */}
         <div className="col-span-1 space-y-6">
+          {/* Closure Details - Only show for closed clients */}
+          {isClosedStatus(client.status) && (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg shadow p-6">
+              <div className="flex items-center gap-2 mb-4">
+                <Archive className="w-5 h-5 text-gray-500" />
+                <h2 className="text-lg font-semibold text-gray-700">
+                  Case Closed
+                </h2>
+              </div>
+              <div className="space-y-3">
+                {client.closedDate && (
+                  <div>
+                    <div className="text-sm text-gray-500">Closed Date</div>
+                    <div className="font-medium text-gray-700">
+                      {formatDate(client.closedDate)}
+                    </div>
+                  </div>
+                )}
+                {client.closedFromWorkflow && (
+                  <div>
+                    <div className="text-sm text-gray-500">Closed From</div>
+                    <div className="font-medium text-gray-700">
+                      {WORKFLOW_LABELS[client.closedFromWorkflow]} Workflow
+                    </div>
+                  </div>
+                )}
+                {client.closedReason && (
+                  <div>
+                    <div className="text-sm text-gray-500">Reason</div>
+                    <div className="font-medium text-gray-700">
+                      {client.closedReason}
+                    </div>
+                  </div>
+                )}
+                {reopenHistory && reopenHistory.length > 0 && (
+                  <div className="pt-3 border-t border-gray-200">
+                    <div className="flex items-center gap-1 text-sm text-amber-600">
+                      <AlertCircle className="w-4 h-4" />
+                      <span>Previously reopened {reopenHistory.length} time{reopenHistory.length > 1 ? "s" : ""}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => setReopenModalOpen(true)}
+                className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <RotateCcw className="w-4 h-4" />
+                Reopen Case
+              </button>
+            </div>
+          )}
+
           {/* Contact Information */}
           <div className="bg-white rounded-lg shadow p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
@@ -670,6 +754,38 @@ export default function ClientDetailPage({ params }: PageProps) {
                   </div>
                 </div>
               )}
+              {/* Reopen History */}
+              {reopenHistory && reopenHistory.length > 0 && (
+                <>
+                  <div className="my-4 border-t border-gray-200 pt-4">
+                    <h3 className="text-sm font-medium text-gray-500 mb-3">Reopen History</h3>
+                  </div>
+                  {reopenHistory.map((entry) => (
+                    <div key={entry.id} className="flex items-start gap-3 pb-3">
+                      <div className="w-2 h-2 rounded-full bg-blue-600 mt-1.5"></div>
+                      <div className="text-sm flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">Case Reopened</span>
+                          <span className="text-gray-500">
+                            {formatDateTime(entry.reopenedAt)}
+                          </span>
+                        </div>
+                        <div className="text-gray-600 mt-1">
+                          <span className="text-gray-400">From:</span> {STATUS_CONFIG[entry.previousStatus]?.label || entry.previousStatus}
+                          <span className="mx-2">→</span>
+                          <span className="text-gray-400">To:</span> {STATUS_CONFIG[entry.newStatus]?.label || entry.newStatus}
+                        </div>
+                        <div className="text-gray-500 mt-1 italic">
+                          "{entry.reopenReason}"
+                        </div>
+                        <div className="text-xs text-gray-400 mt-1">
+                          By {entry.reopenedBy}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -683,6 +799,15 @@ export default function ClientDetailPage({ params }: PageProps) {
         clientName={`${client.firstName} ${client.lastName}`}
         templateType={emailTemplateType}
       />
+
+      {/* Reopen Case Modal */}
+      {reopenModalOpen && (
+        <ReopenCaseModal
+          client={client}
+          isOpen={reopenModalOpen}
+          onClose={() => setReopenModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

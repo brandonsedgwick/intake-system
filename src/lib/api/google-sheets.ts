@@ -89,6 +89,7 @@ function rowToClient(headers: string[], row: string[]): Client {
     paymentType: data.paymentType || undefined,
     insuranceProvider: data.insuranceProvider || undefined,
     insuranceMemberId: data.insuranceMemberId || undefined,
+    preferredTimes: data.preferredTimes ? JSON.parse(data.preferredTimes) : undefined,
     requestedClinician: data.requestedClinician || undefined,
     assignedClinician: data.assignedClinician || undefined,
     presentingConcerns: data.presentingConcerns || undefined,
@@ -102,6 +103,7 @@ function rowToClient(headers: string[], row: string[]): Client {
     referralReason: data.referralReason || undefined,
     isDuplicate: data.isDuplicate === "true",
     duplicateOfClientId: data.duplicateOfClientId || undefined,
+    textEvaluationResult: data.textEvaluationResult || undefined,
     initialOutreachDate: data.initialOutreachDate || undefined,
     followUp1Date: data.followUp1Date || undefined,
     followUp2Date: data.followUp2Date || undefined,
@@ -109,8 +111,12 @@ function rowToClient(headers: string[], row: string[]): Client {
     scheduledDate: data.scheduledDate || undefined,
     simplePracticeId: data.simplePracticeId || undefined,
     paperworkComplete: data.paperworkComplete === "true",
+    referralEmailSentAt: data.referralEmailSentAt || undefined,
+    referralClinicNames: data.referralClinicNames || undefined,
     closedDate: data.closedDate || undefined,
     closedReason: data.closedReason || undefined,
+    closedFromWorkflow: data.closedFromWorkflow as Client["closedFromWorkflow"] || undefined,
+    closedFromStatus: data.closedFromStatus as Client["closedFromStatus"] || undefined,
   };
 }
 
@@ -133,6 +139,7 @@ function clientToRow(client: Client): (string | null)[] {
     client.paymentType || null,
     client.insuranceProvider || null,
     client.insuranceMemberId || null,
+    client.preferredTimes ? JSON.stringify(client.preferredTimes) : null,
     client.requestedClinician || null,
     client.assignedClinician || null,
     client.presentingConcerns || null,
@@ -144,6 +151,7 @@ function clientToRow(client: Client): (string | null)[] {
     client.referralReason || null,
     client.isDuplicate ? "true" : "false",
     client.duplicateOfClientId || null,
+    client.textEvaluationResult || null,
     client.initialOutreachDate || null,
     client.followUp1Date || null,
     client.followUp2Date || null,
@@ -151,8 +159,12 @@ function clientToRow(client: Client): (string | null)[] {
     client.scheduledDate || null,
     client.simplePracticeId || null,
     client.paperworkComplete ? "true" : "false",
+    client.referralEmailSentAt || null,
+    client.referralClinicNames || null,
     client.closedDate || null,
     client.closedReason || null,
+    client.closedFromWorkflow || null,
+    client.closedFromStatus || null,
   ];
 }
 

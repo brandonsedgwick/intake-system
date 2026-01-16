@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/auth-options";
-import { clientsApi } from "@/lib/api/google-sheets";
-import { evaluationCriteriaDbApi, settingsDbApi, auditLogDbApi } from "@/lib/api/prisma-db";
+import { clientsDbApi, evaluationCriteriaDbApi, settingsDbApi, auditLogDbApi } from "@/lib/api/prisma-db";
 import {
   evaluateClient,
   checkForReferralKeywords,
@@ -29,14 +28,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.accessToken) {
+    if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { id } = await params;
 
-    // Fetch client (still from Google Sheets)
-    const client = await clientsApi.getById(session.accessToken, id);
+    // Fetch client
+    const client = await clientsDbApi.getById(id);
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
@@ -145,15 +144,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Update client with evaluation results (still in Google Sheets)
-    const updatedClient = await clientsApi.update(session.accessToken, id, {
+    // Update client with evaluation results
+    const updatedClient = await clientsDbApi.update(id, {
       status: newStatus,
       evaluationNotes: notes.join("\n"),
       referralReason,
       textEvaluationResult: textEvalResult ? JSON.stringify(textEvalResult) : undefined,
     });
 
-    // Log the action to SQLite
+    // Log the action
     await auditLogDbApi.log({
       userId: session.user?.email || "unknown",
       userEmail: session.user?.email || "unknown",

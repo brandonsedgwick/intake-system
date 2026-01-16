@@ -17,6 +17,7 @@ import {
   stringifyJsonObject,
 } from "@/lib/db/json-helpers";
 import {
+  Client,
   Clinician,
   AvailabilitySlot,
   EmailTemplate,
@@ -28,7 +29,278 @@ import {
   ReferralClinicCustomField,
   Communication,
   AuditLogEntry,
+  CaseReopenHistory,
+  ClientStatus,
+  ClosedFromWorkflow,
+  isClosedStatus,
 } from "@/types/client";
+
+// ============================================
+// Clients API
+// ============================================
+export const clientsDbApi = {
+  async getAll(): Promise<Client[]> {
+    const clients = await prisma.client.findMany({
+      orderBy: { createdAt: "desc" },
+    });
+
+    return clients.map((c) => dbClientToClient(c));
+  },
+
+  async getById(id: string): Promise<Client | null> {
+    const c = await prisma.client.findUnique({ where: { id } });
+    if (!c) return null;
+    return dbClientToClient(c);
+  },
+
+  async getByStatus(status: ClientStatus): Promise<Client[]> {
+    const clients = await prisma.client.findMany({
+      where: { status },
+      orderBy: { createdAt: "desc" },
+    });
+    return clients.map((c) => dbClientToClient(c));
+  },
+
+  async getByEmail(email: string): Promise<Client[]> {
+    // SQLite doesn't support case-insensitive queries natively,
+    // so we filter in JS after fetching
+    const clients = await prisma.client.findMany({
+      orderBy: { createdAt: "desc" },
+    });
+    const lowerEmail = email.toLowerCase();
+    return clients
+      .filter((c) => c.email.toLowerCase() === lowerEmail)
+      .map((c) => dbClientToClient(c));
+  },
+
+  async getFollowUpsDue(): Promise<Client[]> {
+    const now = new Date().toISOString();
+    const clients = await prisma.client.findMany({
+      where: {
+        OR: [
+          { status: "follow_up_1", nextFollowUpDue: { lte: now } },
+          { status: "follow_up_2", nextFollowUpDue: { lte: now } },
+          { status: "outreach_sent", nextFollowUpDue: { lte: now } },
+        ],
+      },
+      orderBy: { nextFollowUpDue: "asc" },
+    });
+    return clients.map((c) => dbClientToClient(c));
+  },
+
+  async getClosed(workflow?: ClosedFromWorkflow): Promise<Client[]> {
+    const closedStatuses = ["referred", "closed_no_contact", "closed_other", "completed", "duplicate"];
+    const clients = await prisma.client.findMany({
+      where: {
+        status: { in: closedStatuses },
+        ...(workflow ? { closedFromWorkflow: workflow } : {}),
+      },
+      orderBy: { closedDate: "desc" },
+    });
+    return clients.map((c) => dbClientToClient(c));
+  },
+
+  async create(data: Omit<Client, "id" | "createdAt" | "updatedAt">): Promise<Client> {
+    const c = await prisma.client.create({
+      data: {
+        status: data.status,
+        source: data.source,
+        formResponseId: data.formResponseId || null,
+        formTimestamp: data.formTimestamp || null,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        email: data.email,
+        phone: data.phone || null,
+        age: data.age || null,
+        paymentType: data.paymentType || null,
+        insuranceProvider: data.insuranceProvider || null,
+        insuranceMemberId: data.insuranceMemberId || null,
+        preferredTimes: data.preferredTimes ? JSON.stringify(data.preferredTimes) : null,
+        requestedClinician: data.requestedClinician || null,
+        assignedClinician: data.assignedClinician || null,
+        presentingConcerns: data.presentingConcerns || null,
+        suicideAttemptRecent: data.suicideAttemptRecent || null,
+        psychiatricHospitalization: data.psychiatricHospitalization || null,
+        additionalInfo: data.additionalInfo || null,
+        evaluationScore: data.evaluationScore ?? null,
+        evaluationNotes: data.evaluationNotes || null,
+        referralReason: data.referralReason || null,
+        isDuplicate: data.isDuplicate ?? false,
+        duplicateOfClientId: data.duplicateOfClientId || null,
+        textEvaluationResult: data.textEvaluationResult || null,
+        initialOutreachDate: data.initialOutreachDate || null,
+        followUp1Date: data.followUp1Date || null,
+        followUp2Date: data.followUp2Date || null,
+        nextFollowUpDue: data.nextFollowUpDue || null,
+        scheduledDate: data.scheduledDate || null,
+        simplePracticeId: data.simplePracticeId || null,
+        paperworkComplete: data.paperworkComplete ?? false,
+        referralEmailSentAt: data.referralEmailSentAt || null,
+        referralClinicNames: data.referralClinicNames || null,
+        closedDate: data.closedDate || null,
+        closedReason: data.closedReason || null,
+        closedFromWorkflow: data.closedFromWorkflow || null,
+        closedFromStatus: data.closedFromStatus || null,
+      },
+    });
+    return dbClientToClient(c);
+  },
+
+  async update(id: string, updates: Partial<Client>): Promise<Client | null> {
+    const existing = await prisma.client.findUnique({ where: { id } });
+    if (!existing) return null;
+
+    const c = await prisma.client.update({
+      where: { id },
+      data: {
+        status: updates.status ?? existing.status,
+        source: updates.source ?? existing.source,
+        formResponseId: updates.formResponseId !== undefined ? updates.formResponseId || null : existing.formResponseId,
+        formTimestamp: updates.formTimestamp !== undefined ? updates.formTimestamp || null : existing.formTimestamp,
+        firstName: updates.firstName ?? existing.firstName,
+        lastName: updates.lastName ?? existing.lastName,
+        email: updates.email ?? existing.email,
+        phone: updates.phone !== undefined ? updates.phone || null : existing.phone,
+        age: updates.age !== undefined ? updates.age || null : existing.age,
+        paymentType: updates.paymentType !== undefined ? updates.paymentType || null : existing.paymentType,
+        insuranceProvider: updates.insuranceProvider !== undefined ? updates.insuranceProvider || null : existing.insuranceProvider,
+        insuranceMemberId: updates.insuranceMemberId !== undefined ? updates.insuranceMemberId || null : existing.insuranceMemberId,
+        preferredTimes: updates.preferredTimes !== undefined
+          ? updates.preferredTimes ? JSON.stringify(updates.preferredTimes) : null
+          : existing.preferredTimes,
+        requestedClinician: updates.requestedClinician !== undefined ? updates.requestedClinician || null : existing.requestedClinician,
+        assignedClinician: updates.assignedClinician !== undefined ? updates.assignedClinician || null : existing.assignedClinician,
+        presentingConcerns: updates.presentingConcerns !== undefined ? updates.presentingConcerns || null : existing.presentingConcerns,
+        suicideAttemptRecent: updates.suicideAttemptRecent !== undefined ? updates.suicideAttemptRecent || null : existing.suicideAttemptRecent,
+        psychiatricHospitalization: updates.psychiatricHospitalization !== undefined ? updates.psychiatricHospitalization || null : existing.psychiatricHospitalization,
+        additionalInfo: updates.additionalInfo !== undefined ? updates.additionalInfo || null : existing.additionalInfo,
+        evaluationScore: updates.evaluationScore !== undefined ? updates.evaluationScore ?? null : existing.evaluationScore,
+        evaluationNotes: updates.evaluationNotes !== undefined ? updates.evaluationNotes || null : existing.evaluationNotes,
+        referralReason: updates.referralReason !== undefined ? updates.referralReason || null : existing.referralReason,
+        isDuplicate: updates.isDuplicate ?? existing.isDuplicate,
+        duplicateOfClientId: updates.duplicateOfClientId !== undefined ? updates.duplicateOfClientId || null : existing.duplicateOfClientId,
+        textEvaluationResult: updates.textEvaluationResult !== undefined ? updates.textEvaluationResult || null : existing.textEvaluationResult,
+        initialOutreachDate: updates.initialOutreachDate !== undefined ? updates.initialOutreachDate || null : existing.initialOutreachDate,
+        followUp1Date: updates.followUp1Date !== undefined ? updates.followUp1Date || null : existing.followUp1Date,
+        followUp2Date: updates.followUp2Date !== undefined ? updates.followUp2Date || null : existing.followUp2Date,
+        nextFollowUpDue: updates.nextFollowUpDue !== undefined ? updates.nextFollowUpDue || null : existing.nextFollowUpDue,
+        scheduledDate: updates.scheduledDate !== undefined ? updates.scheduledDate || null : existing.scheduledDate,
+        simplePracticeId: updates.simplePracticeId !== undefined ? updates.simplePracticeId || null : existing.simplePracticeId,
+        paperworkComplete: updates.paperworkComplete ?? existing.paperworkComplete,
+        referralEmailSentAt: updates.referralEmailSentAt !== undefined ? updates.referralEmailSentAt || null : existing.referralEmailSentAt,
+        referralClinicNames: updates.referralClinicNames !== undefined ? updates.referralClinicNames || null : existing.referralClinicNames,
+        closedDate: updates.closedDate !== undefined ? updates.closedDate || null : existing.closedDate,
+        closedReason: updates.closedReason !== undefined ? updates.closedReason || null : existing.closedReason,
+        closedFromWorkflow: updates.closedFromWorkflow !== undefined ? updates.closedFromWorkflow || null : existing.closedFromWorkflow,
+        closedFromStatus: updates.closedFromStatus !== undefined ? updates.closedFromStatus || null : existing.closedFromStatus,
+      },
+    });
+    return dbClientToClient(c);
+  },
+
+  async delete(id: string): Promise<boolean> {
+    try {
+      await prisma.client.delete({ where: { id } });
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  async deleteAll(): Promise<number> {
+    const result = await prisma.client.deleteMany();
+    return result.count;
+  },
+};
+
+// Helper to convert Prisma Client to app Client type
+function dbClientToClient(c: {
+  id: string;
+  createdAt: Date;
+  updatedAt: Date;
+  status: string;
+  source: string;
+  formResponseId: string | null;
+  formTimestamp: string | null;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string | null;
+  age: string | null;
+  paymentType: string | null;
+  insuranceProvider: string | null;
+  insuranceMemberId: string | null;
+  preferredTimes: string | null;
+  requestedClinician: string | null;
+  assignedClinician: string | null;
+  presentingConcerns: string | null;
+  suicideAttemptRecent: string | null;
+  psychiatricHospitalization: string | null;
+  additionalInfo: string | null;
+  evaluationScore: number | null;
+  evaluationNotes: string | null;
+  referralReason: string | null;
+  isDuplicate: boolean;
+  duplicateOfClientId: string | null;
+  textEvaluationResult: string | null;
+  initialOutreachDate: string | null;
+  followUp1Date: string | null;
+  followUp2Date: string | null;
+  nextFollowUpDue: string | null;
+  scheduledDate: string | null;
+  simplePracticeId: string | null;
+  paperworkComplete: boolean;
+  referralEmailSentAt: string | null;
+  referralClinicNames: string | null;
+  closedDate: string | null;
+  closedReason: string | null;
+  closedFromWorkflow: string | null;
+  closedFromStatus: string | null;
+}): Client {
+  return {
+    id: c.id,
+    createdAt: c.createdAt.toISOString(),
+    updatedAt: c.updatedAt.toISOString(),
+    status: c.status as ClientStatus,
+    source: c.source as "google_form" | "manual",
+    formResponseId: c.formResponseId || undefined,
+    formTimestamp: c.formTimestamp || undefined,
+    firstName: c.firstName,
+    lastName: c.lastName,
+    email: c.email,
+    phone: c.phone || undefined,
+    age: c.age || undefined,
+    paymentType: c.paymentType || undefined,
+    insuranceProvider: c.insuranceProvider || undefined,
+    insuranceMemberId: c.insuranceMemberId || undefined,
+    preferredTimes: c.preferredTimes ? parseJsonArray<string>(c.preferredTimes) : undefined,
+    requestedClinician: c.requestedClinician || undefined,
+    assignedClinician: c.assignedClinician || undefined,
+    presentingConcerns: c.presentingConcerns || undefined,
+    suicideAttemptRecent: c.suicideAttemptRecent || undefined,
+    psychiatricHospitalization: c.psychiatricHospitalization || undefined,
+    additionalInfo: c.additionalInfo || undefined,
+    evaluationScore: c.evaluationScore ?? undefined,
+    evaluationNotes: c.evaluationNotes || undefined,
+    referralReason: c.referralReason || undefined,
+    isDuplicate: c.isDuplicate || undefined,
+    duplicateOfClientId: c.duplicateOfClientId || undefined,
+    textEvaluationResult: c.textEvaluationResult || undefined,
+    initialOutreachDate: c.initialOutreachDate || undefined,
+    followUp1Date: c.followUp1Date || undefined,
+    followUp2Date: c.followUp2Date || undefined,
+    nextFollowUpDue: c.nextFollowUpDue || undefined,
+    scheduledDate: c.scheduledDate || undefined,
+    simplePracticeId: c.simplePracticeId || undefined,
+    paperworkComplete: c.paperworkComplete || undefined,
+    referralEmailSentAt: c.referralEmailSentAt || undefined,
+    referralClinicNames: c.referralClinicNames || undefined,
+    closedDate: c.closedDate || undefined,
+    closedReason: c.closedReason || undefined,
+    closedFromWorkflow: c.closedFromWorkflow as ClosedFromWorkflow || undefined,
+    closedFromStatus: c.closedFromStatus as ClientStatus || undefined,
+  };
+}
 
 // ============================================
 // Clinicians API
@@ -1512,5 +1784,87 @@ export const communicationsDbApi = {
     } catch {
       return false;
     }
+  },
+};
+
+// ============================================
+// Case Reopen History API
+// ============================================
+export const caseReopenHistoryDbApi = {
+  async create(data: {
+    clientId: string;
+    reopenedBy: string;
+    reopenReason: string;
+    previousStatus: ClientStatus;
+    newStatus: ClientStatus;
+    closedDate?: string;
+    closedReason?: string;
+    closedFromWorkflow?: ClosedFromWorkflow;
+  }): Promise<CaseReopenHistory> {
+    const record = await prisma.caseReopenHistory.create({
+      data: {
+        clientId: data.clientId,
+        reopenedBy: data.reopenedBy,
+        reopenReason: data.reopenReason,
+        previousStatus: data.previousStatus,
+        newStatus: data.newStatus,
+        closedDate: data.closedDate || null,
+        closedReason: data.closedReason || null,
+        closedFromWorkflow: data.closedFromWorkflow || null,
+      },
+    });
+
+    return {
+      id: record.id,
+      clientId: record.clientId,
+      reopenedAt: record.reopenedAt.toISOString(),
+      reopenedBy: record.reopenedBy,
+      reopenReason: record.reopenReason,
+      previousStatus: record.previousStatus as ClientStatus,
+      newStatus: record.newStatus as ClientStatus,
+      closedDate: record.closedDate || undefined,
+      closedReason: record.closedReason || undefined,
+      closedFromWorkflow: record.closedFromWorkflow as ClosedFromWorkflow || undefined,
+    };
+  },
+
+  async getByClientId(clientId: string): Promise<CaseReopenHistory[]> {
+    const records = await prisma.caseReopenHistory.findMany({
+      where: { clientId },
+      orderBy: { reopenedAt: "desc" },
+    });
+
+    return records.map((record) => ({
+      id: record.id,
+      clientId: record.clientId,
+      reopenedAt: record.reopenedAt.toISOString(),
+      reopenedBy: record.reopenedBy,
+      reopenReason: record.reopenReason,
+      previousStatus: record.previousStatus as ClientStatus,
+      newStatus: record.newStatus as ClientStatus,
+      closedDate: record.closedDate || undefined,
+      closedReason: record.closedReason || undefined,
+      closedFromWorkflow: record.closedFromWorkflow as ClosedFromWorkflow || undefined,
+    }));
+  },
+
+  async getRecent(limit: number = 50): Promise<CaseReopenHistory[]> {
+    const records = await prisma.caseReopenHistory.findMany({
+      orderBy: { reopenedAt: "desc" },
+      take: limit,
+    });
+
+    return records.map((record) => ({
+      id: record.id,
+      clientId: record.clientId,
+      reopenedAt: record.reopenedAt.toISOString(),
+      reopenedBy: record.reopenedBy,
+      reopenReason: record.reopenReason,
+      previousStatus: record.previousStatus as ClientStatus,
+      newStatus: record.newStatus as ClientStatus,
+      closedDate: record.closedDate || undefined,
+      closedReason: record.closedReason || undefined,
+      closedFromWorkflow: record.closedFromWorkflow as ClosedFromWorkflow || undefined,
+    }));
   },
 };

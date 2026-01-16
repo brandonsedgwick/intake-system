@@ -1,10 +1,14 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo, Fragment } from "react";
-import { useClients, useUpdateClient } from "@/hooks/use-clients";
+import { useClients, useUpdateClient, useClosedClients } from "@/hooks/use-clients";
 import { useReferralClinics } from "@/hooks/use-referral-clinics";
 import { useReferralTemplates, usePreviewTemplate } from "@/hooks/use-templates";
-import { Client, EmailTemplate, ReferralClinic } from "@/types/client";
+import { useSendEmail, EmailAttachment } from "@/hooks/use-emails";
+import { Client, EmailTemplate, ReferralClinic, isClosedStatus } from "@/types/client";
+import { ClosedCasesSection } from "@/components/clients/closed-cases-section";
+import { ClientPreviewModal } from "@/components/clients/client-preview-modal";
+import { RichTextEditor } from "@/components/templates/rich-text-editor";
 import { formatRelativeTime, formatDate } from "@/lib/utils";
 import Link from "next/link";
 import {
@@ -32,6 +36,12 @@ import {
   Eye,
   Send,
   Edit2,
+  Paperclip,
+  Trash2,
+  Plus,
+  Clock,
+  Circle,
+  XCircle,
 } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
 
@@ -40,15 +50,21 @@ function ClientRow({
   isSelected,
   onClick,
   onDoubleClick,
+  onClose,
 }: {
   client: Client;
   isSelected: boolean;
   onClick: () => void;
   onDoubleClick: () => void;
+  onClose: () => void;
 }) {
+  // Use persisted referral sent data from client record
+  const isSent = !!client.referralEmailSentAt;
+  const clinicNames = client.referralClinicNames?.split(", ").filter(Boolean) || [];
+
   return (
     <div
-      className={`px-4 py-3 flex items-center gap-6 cursor-pointer transition-colors ${
+      className={`px-4 py-3 flex items-center gap-4 cursor-pointer transition-colors ${
         isSelected
           ? "bg-amber-50 border-l-4 border-amber-500"
           : "hover:bg-gray-50 border-l-4 border-transparent"
@@ -59,8 +75,22 @@ function ClientRow({
         onDoubleClick();
       }}
     >
-      <div className="flex items-center gap-3 min-w-0 w-48 flex-shrink-0">
-        <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 font-medium text-sm flex-shrink-0">
+      {/* Status Icon */}
+      <div className="flex-shrink-0" title={isSent ? `Referral sent ${formatRelativeTime(client.referralEmailSentAt!)}` : "Pending referral"}>
+        {isSent ? (
+          <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
+            <CheckCircle className="w-5 h-5 text-green-600" />
+          </div>
+        ) : (
+          <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center">
+            <Circle className="w-5 h-5 text-amber-500" />
+          </div>
+        )}
+      </div>
+
+      {/* Client Info */}
+      <div className="flex items-center gap-3 min-w-0 w-44 flex-shrink-0">
+        <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 font-medium text-sm flex-shrink-0">
           {client.firstName[0]}
           {client.lastName[0]}
         </div>
@@ -72,17 +102,43 @@ function ClientRow({
         </div>
       </div>
 
-      <div className="text-xs text-gray-500 hidden sm:block flex-shrink-0">
+      {/* Submission Date */}
+      <div className="text-xs text-gray-500 hidden sm:block flex-shrink-0 w-24">
         <div>{formatDate(client.createdAt)}</div>
         <div className="text-gray-400">{formatRelativeTime(client.createdAt)}</div>
       </div>
       <div className="text-xs text-gray-500 sm:hidden flex-shrink-0">{formatRelativeTime(client.createdAt)}</div>
 
-      {client.referralReason && (
-        <div className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded max-w-[200px] truncate hidden lg:block flex-shrink-0">
-          {client.referralReason}
-        </div>
-      )}
+      {/* Referral Status / Sent Info */}
+      <div className="flex-1 min-w-0 hidden md:block">
+        {isSent ? (
+          <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 px-2 py-1.5 rounded-lg border border-green-200">
+            <Clock className="w-3.5 h-3.5 flex-shrink-0" />
+            <span className="truncate">
+              Sent {formatRelativeTime(client.referralEmailSentAt!)}
+              {clinicNames.length > 0 && (
+                <span className="text-green-600"> to {clinicNames.join(", ")}</span>
+              )}
+            </span>
+          </div>
+        ) : client.referralReason ? (
+          <div className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded max-w-[200px] truncate">
+            {client.referralReason}
+          </div>
+        ) : null}
+      </div>
+
+      {/* Close Button */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+        className="flex-shrink-0 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+        title="Close referral"
+      >
+        <XCircle className="w-5 h-5" />
+      </button>
     </div>
   );
 }
@@ -517,8 +573,9 @@ interface ReadingPaneProps {
   selectedClinics: ReferralClinic[];
   onSelectTemplate: (template: EmailTemplate | null) => void;
   onSelectClinics: (clinics: ReferralClinic[]) => void;
-  onProcessReferral: () => void;
   onClose: () => void;
+  onCloseCase: () => void;
+  onReferralSent: (clinicNames: string[]) => void;
 }
 
 function ReadingPane({
@@ -527,17 +584,29 @@ function ReadingPane({
   selectedClinics,
   onSelectTemplate,
   onSelectClinics,
-  onProcessReferral,
   onClose,
+  onCloseCase,
+  onReferralSent,
 }: ReadingPaneProps) {
   const { data: templates, isLoading: templatesLoading } = useReferralTemplates();
   const previewMutation = usePreviewTemplate();
+  const sendEmailMutation = useSendEmail();
+  const { addToast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [templateDropdownOpen, setTemplateDropdownOpen] = useState(false);
   const [clinicModalOpen, setClinicModalOpen] = useState(false);
   const [showEmailPreview, setShowEmailPreview] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [sendSuccess, setSendSuccess] = useState(false);
+
+  // Email fields
+  const [editedTo, setEditedTo] = useState("");
+  const [editedCc, setEditedCc] = useState("");
+  const [editedBcc, setEditedBcc] = useState("");
   const [editedSubject, setEditedSubject] = useState("");
   const [editedBody, setEditedBody] = useState("");
+  const [attachments, setAttachments] = useState<EmailAttachment[]>([]);
 
   const canPreview = selectedTemplate && selectedClinics.length > 0;
 
@@ -593,11 +662,109 @@ function ReadingPane({
       const clinicInfoBlock = buildClinicInfoBlock(selectedClinics);
       const fullBody = result.body + clinicInfoBlock;
 
+      setEditedTo(client.email);
+      setEditedCc("");
+      setEditedBcc("");
       setEditedSubject(result.subject);
       setEditedBody(fullBody);
+      setAttachments([]);
+      setSendSuccess(false);
+      setIsEditing(false);
       setShowEmailPreview(true);
     } catch (error) {
       console.error("Failed to preview email:", error);
+    }
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    const newAttachments: EmailAttachment[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      // Check file size (max 10MB per file)
+      if (file.size > 10 * 1024 * 1024) {
+        addToast({
+          type: "error",
+          title: "File too large",
+          message: `${file.name} exceeds the 10MB limit`,
+        });
+        continue;
+      }
+
+      const content = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = (reader.result as string).split(",")[1];
+          resolve(base64);
+        };
+        reader.readAsDataURL(file);
+      });
+
+      newAttachments.push({
+        filename: file.name,
+        mimeType: file.type || "application/octet-stream",
+        content,
+      });
+    }
+
+    setAttachments((prev) => [...prev, ...newAttachments]);
+    // Reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const removeAttachment = (index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSendEmail = async () => {
+    if (!editedTo || !editedSubject || !editedBody) {
+      addToast({
+        type: "error",
+        title: "Missing fields",
+        message: "Please fill in To, Subject, and Body",
+      });
+      return;
+    }
+
+    try {
+      await sendEmailMutation.mutateAsync({
+        clientId: client.id,
+        to: editedTo,
+        cc: editedCc || undefined,
+        bcc: editedBcc || undefined,
+        subject: editedSubject,
+        body: editedBody,
+        bodyFormat: "html",
+        templateType: selectedTemplate?.type,
+        attachments: attachments.length > 0 ? attachments : undefined,
+      });
+
+      setSendSuccess(true);
+
+      // Notify parent that referral was sent
+      onReferralSent(selectedClinics.map((c) => c.practiceName));
+
+      addToast({
+        type: "success",
+        title: "Email sent",
+        message: `Referral email sent to ${editedTo}`,
+      });
+
+      // Close after a brief delay (don't auto-process - let user close when ready)
+      setTimeout(() => {
+        setShowEmailPreview(false);
+      }, 1500);
+    } catch (error) {
+      addToast({
+        type: "error",
+        title: "Failed to send",
+        message: error instanceof Error ? error.message : "Failed to send email",
+      });
     }
   };
 
@@ -762,29 +929,29 @@ function ReadingPane({
           clientConditions={client.presentingConcerns || client.referralReason}
         />
 
-        {/* Preview Email Button - only shown when both template and clinic are selected */}
+        {/* Process Referral Button - only shown when both template and clinic are selected */}
         {canPreview && (
           <button
             onClick={handlePreviewEmail}
             disabled={previewMutation.isPending}
-            className="flex items-center gap-2 px-4 py-2 text-amber-700 bg-amber-50 border border-amber-300 rounded-lg hover:bg-amber-100 transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50"
           >
             {previewMutation.isPending ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
-              <Eye className="w-4 h-4" />
+              <Send className="w-4 h-4" />
             )}
-            Preview Email
+            Process Referral
           </button>
         )}
 
+        {/* Close Case Button */}
         <button
-          onClick={onProcessReferral}
-          disabled={!canPreview}
-          className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          onClick={onCloseCase}
+          className="flex items-center gap-2 px-4 py-2 text-gray-600 bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 transition-colors"
         >
-          <CheckCircle className="w-4 h-4" />
-          Process Referral
+          <XCircle className="w-4 h-4" />
+          Close Case
         </button>
       </div>
 
@@ -933,19 +1100,34 @@ function ReadingPane({
           {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/50"
-            onClick={() => setShowEmailPreview(false)}
+            onClick={() => !sendEmailMutation.isPending && setShowEmailPreview(false)}
           />
 
           {/* Modal */}
-          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b">
-              <h2 className="text-xl font-semibold text-gray-900">
-                Preview Referral Email
-              </h2>
+              <div className="flex items-center gap-3">
+                <h2 className="text-xl font-semibold text-gray-900">
+                  {sendSuccess ? "Email Sent!" : isEditing ? "Edit Email" : "Preview Referral Email"}
+                </h2>
+                {!sendSuccess && (
+                  <button
+                    onClick={() => setIsEditing(!isEditing)}
+                    className={`px-3 py-1 text-sm rounded-full transition-colors ${
+                      isEditing
+                        ? "bg-amber-100 text-amber-700"
+                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    }`}
+                  >
+                    {isEditing ? "Preview Mode" : "Edit Mode"}
+                  </button>
+                )}
+              </div>
               <button
                 onClick={() => setShowEmailPreview(false)}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+                disabled={sendEmailMutation.isPending}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-50"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -953,95 +1135,213 @@ function ReadingPane({
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-6">
-              <div className="space-y-4">
-                {/* Email metadata */}
-                <div className="grid grid-cols-[80px_1fr] gap-2 text-sm">
-                  <span className="text-gray-500">To:</span>
-                  <span className="text-gray-900">{client.email}</span>
-
-                  <span className="text-gray-500">Subject:</span>
-                  {isEditing ? (
-                    <input
-                      type="text"
-                      value={editedSubject}
-                      onChange={(e) => setEditedSubject(e.target.value)}
-                      className="border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                    />
-                  ) : (
-                    <span className="text-gray-900 font-medium">
-                      {editedSubject}
-                    </span>
-                  )}
-                </div>
-
-                {/* Referral Info Summary */}
-                <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
-                  <div className="text-sm text-amber-800">
-                    <strong>Referring to:</strong>{" "}
-                    {selectedClinics.length === 1
-                      ? `${selectedClinics[0].practiceName}${selectedClinics[0].phone ? ` • ${selectedClinics[0].phone}` : ""}`
-                      : `${selectedClinics.length} clinics`}
+              {sendSuccess ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
+                    <CheckCircle className="w-8 h-8 text-green-600" />
                   </div>
-                  {selectedClinics.length > 1 && (
-                    <ul className="mt-2 text-xs text-amber-700 space-y-1">
-                      {selectedClinics.map((clinic) => (
-                        <li key={clinic.id} className="flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
-                          {clinic.practiceName}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                  <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                    Email Sent Successfully!
+                  </h3>
+                  <p className="text-gray-600">
+                    The referral email has been sent to {editedTo}
+                  </p>
                 </div>
-
-                {/* Email body */}
-                <div className="mt-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-gray-500">Message:</span>
-                    <button
-                      onClick={() => setIsEditing(!isEditing)}
-                      className="flex items-center gap-1 text-sm text-amber-600 hover:text-amber-700"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                      {isEditing ? "Preview" : "Edit"}
-                    </button>
-                  </div>
-
-                  {isEditing ? (
-                    <textarea
-                      value={editedBody}
-                      onChange={(e) => setEditedBody(e.target.value)}
-                      rows={12}
-                      className="w-full border rounded-lg p-4 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                    />
-                  ) : (
-                    <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-700 whitespace-pre-wrap">
-                      {editedBody.replace(/<[^>]*>/g, "")}
+              ) : (
+                <div className="space-y-4">
+                  {/* Email Fields */}
+                  <div className="space-y-3">
+                    {/* To */}
+                    <div className="flex items-center gap-3">
+                      <label className="w-16 text-sm font-medium text-gray-500">To:</label>
+                      {isEditing ? (
+                        <input
+                          type="email"
+                          value={editedTo}
+                          onChange={(e) => setEditedTo(e.target.value)}
+                          className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                          placeholder="recipient@example.com"
+                        />
+                      ) : (
+                        <span className="text-sm text-gray-900">{editedTo}</span>
+                      )}
                     </div>
-                  )}
+
+                    {/* CC */}
+                    <div className="flex items-center gap-3">
+                      <label className="w-16 text-sm font-medium text-gray-500">CC:</label>
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          value={editedCc}
+                          onChange={(e) => setEditedCc(e.target.value)}
+                          className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                          placeholder="Separate multiple emails with commas"
+                        />
+                      ) : (
+                        <span className="text-sm text-gray-500">
+                          {editedCc || <span className="italic">None</span>}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* BCC */}
+                    <div className="flex items-center gap-3">
+                      <label className="w-16 text-sm font-medium text-gray-500">BCC:</label>
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          value={editedBcc}
+                          onChange={(e) => setEditedBcc(e.target.value)}
+                          className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                          placeholder="Separate multiple emails with commas"
+                        />
+                      ) : (
+                        <span className="text-sm text-gray-500">
+                          {editedBcc || <span className="italic">None</span>}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Subject */}
+                    <div className="flex items-center gap-3">
+                      <label className="w-16 text-sm font-medium text-gray-500">Subject:</label>
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          value={editedSubject}
+                          onChange={(e) => setEditedSubject(e.target.value)}
+                          className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        />
+                      ) : (
+                        <span className="text-sm text-gray-900 font-medium">{editedSubject}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Referral Info Summary */}
+                  <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
+                    <div className="text-sm text-amber-800">
+                      <strong>Referring to:</strong>{" "}
+                      {selectedClinics.length === 1
+                        ? `${selectedClinics[0].practiceName}${selectedClinics[0].phone ? ` • ${selectedClinics[0].phone}` : ""}`
+                        : `${selectedClinics.length} clinics`}
+                    </div>
+                    {selectedClinics.length > 1 && (
+                      <ul className="mt-2 text-xs text-amber-700 space-y-1">
+                        {selectedClinics.map((clinic) => (
+                          <li key={clinic.id} className="flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
+                            {clinic.practiceName}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+
+                  {/* Email body */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-2">Message:</label>
+                    {isEditing ? (
+                      <RichTextEditor
+                        content={editedBody}
+                        onChange={setEditedBody}
+                        placeholder="Compose your email..."
+                        editable={true}
+                      />
+                    ) : (
+                      <div
+                        className="bg-gray-50 rounded-lg p-4 text-sm text-gray-700 prose prose-sm max-w-none"
+                        dangerouslySetInnerHTML={{ __html: editedBody }}
+                      />
+                    )}
+                  </div>
+
+                  {/* Attachments */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm font-medium text-gray-500">
+                        Attachments ({attachments.length})
+                      </label>
+                      {isEditing && (
+                        <button
+                          onClick={() => fileInputRef.current?.click()}
+                          className="flex items-center gap-1 text-sm text-amber-600 hover:text-amber-700"
+                        >
+                          <Plus className="w-4 h-4" />
+                          Add File
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      onChange={handleFileSelect}
+                      className="hidden"
+                    />
+                    {attachments.length > 0 ? (
+                      <div className="space-y-2">
+                        {attachments.map((attachment, index) => (
+                          <div
+                            key={index}
+                            className="flex items-center justify-between p-2 bg-gray-50 rounded-lg"
+                          >
+                            <div className="flex items-center gap-2">
+                              <Paperclip className="w-4 h-4 text-gray-400" />
+                              <span className="text-sm text-gray-700">{attachment.filename}</span>
+                              <span className="text-xs text-gray-400">
+                                ({Math.round(attachment.content.length * 0.75 / 1024)}KB)
+                              </span>
+                            </div>
+                            {isEditing && (
+                              <button
+                                onClick={() => removeAttachment(index)}
+                                className="p-1 text-gray-400 hover:text-red-500 rounded"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-400 italic">No attachments</p>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-end gap-3 p-6 border-t bg-gray-50">
-              <button
-                onClick={() => setShowEmailPreview(false)}
-                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setShowEmailPreview(false);
-                  onProcessReferral();
-                }}
-                className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700"
-              >
-                <Send className="w-4 h-4" />
-                Send & Process Referral
-              </button>
-            </div>
+            {!sendSuccess && (
+              <div className="flex items-center justify-end gap-3 p-6 border-t bg-gray-50">
+                <button
+                  onClick={() => setShowEmailPreview(false)}
+                  disabled={sendEmailMutation.isPending}
+                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSendEmail}
+                  disabled={sendEmailMutation.isPending || !editedTo || !editedSubject}
+                  className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {sendEmailMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Sending...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      Send Email
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1049,212 +1349,89 @@ function ReadingPane({
   );
 }
 
-interface ReferralModalProps {
+// Close Confirmation Modal
+interface CloseConfirmModalProps {
   client: Client;
   isOpen: boolean;
-  onClose: () => void;
-  onComplete: () => void;
+  referralWasSent: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+  isLoading: boolean;
 }
 
-function ReferralModal({ client, isOpen, onClose, onComplete }: ReferralModalProps) {
-  const { data: clinics, isLoading: clinicsLoading } = useReferralClinics();
-  const updateClient = useUpdateClient();
-  const { addToast } = useToast();
-  const [selectedClinicId, setSelectedClinicId] = useState<string | null>(null);
-  const [notes, setNotes] = useState(client.referralReason || "");
-
+function CloseConfirmModal({
+  client,
+  isOpen,
+  referralWasSent,
+  onConfirm,
+  onCancel,
+  isLoading,
+}: CloseConfirmModalProps) {
   if (!isOpen) return null;
-
-  const activeClinics = (clinics || []).filter((c) => c.isActive);
-  const selectedClinic = activeClinics.find((c) => c.id === selectedClinicId);
-
-  const handleReferral = async () => {
-    if (!selectedClinicId) {
-      addToast({
-        type: "error",
-        title: "No clinic selected",
-        message: "Please select a referral clinic.",
-      });
-      return;
-    }
-
-    try {
-      await updateClient.mutateAsync({
-        id: client.id,
-        data: {
-          status: "referred",
-          referralReason: notes,
-          evaluationNotes: `Referred to: ${selectedClinic?.practiceName}`,
-        },
-      });
-
-      addToast({
-        type: "success",
-        title: "Referral Complete",
-        message: `${client.firstName} ${client.lastName} has been referred to ${selectedClinic?.practiceName}.`,
-      });
-
-      onComplete();
-      onClose();
-    } catch (error) {
-      addToast({
-        type: "error",
-        title: "Referral failed",
-        message: error instanceof Error ? error.message : "Failed to complete referral",
-      });
-    }
-  };
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="fixed inset-0 bg-black bg-opacity-50" onClick={onClose} />
+      <div className="fixed inset-0 bg-black bg-opacity-50" onClick={onCancel} />
       <div className="flex min-h-full items-center justify-center p-4">
         <div
-          className="relative bg-white rounded-xl shadow-2xl max-w-2xl w-full"
+          className="relative bg-white rounded-xl shadow-2xl max-w-md w-full"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Header */}
-          <div className="border-b px-6 py-4 flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">
-                Refer Client
-              </h2>
-              <p className="text-sm text-gray-500">
-                {client.firstName} {client.lastName}
-              </p>
-            </div>
-            <button
-              onClick={onClose}
-              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          {/* Content */}
-          <div className="p-6 space-y-6">
-            {/* Referral Reason */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Reason for Referral
-              </label>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Describe why this client is being referred..."
-                rows={3}
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
-            </div>
-
-            {/* Clinic Selection */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Select Referral Clinic
-              </label>
-              {clinicsLoading ? (
-                <div className="text-center py-4">
-                  <Loader2 className="w-6 h-6 animate-spin mx-auto text-gray-400" />
-                </div>
-              ) : activeClinics.length === 0 ? (
-                <div className="text-center py-4 bg-gray-50 rounded-lg">
-                  <Building2 className="w-8 h-8 mx-auto text-gray-400 mb-2" />
-                  <p className="text-gray-600">No referral clinics configured.</p>
-                  <Link
-                    href="/settings"
-                    className="text-sm text-blue-600 hover:underline"
-                  >
-                    Add clinics in Settings
-                  </Link>
-                </div>
+          <div className="p-6">
+            <div className={`w-12 h-12 rounded-full ${referralWasSent ? "bg-green-100" : "bg-amber-100"} flex items-center justify-center mx-auto mb-4`}>
+              {referralWasSent ? (
+                <CheckCircle className="w-6 h-6 text-green-600" />
               ) : (
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {activeClinics.map((clinic) => (
-                    <label
-                      key={clinic.id}
-                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                        selectedClinicId === clinic.id
-                          ? "border-amber-300 bg-amber-50"
-                          : "border-gray-200 hover:bg-gray-50"
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="clinic"
-                        value={clinic.id}
-                        checked={selectedClinicId === clinic.id}
-                        onChange={(e) => setSelectedClinicId(e.target.value)}
-                        className="mt-1"
-                      />
-                      <div className="flex-1">
-                        <div className="font-medium text-gray-900">{clinic.practiceName}</div>
-                        {clinic.address && (
-                          <div className="text-sm text-gray-500">{clinic.address}</div>
-                        )}
-                        {clinic.specialties.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {clinic.specialties.slice(0, 4).map((specialty, i) => (
-                              <span
-                                key={i}
-                                className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded text-xs"
-                              >
-                                {specialty}
-                              </span>
-                            ))}
-                            {clinic.specialties.length > 4 && (
-                              <span className="text-xs text-gray-500">
-                                +{clinic.specialties.length - 4} more
-                              </span>
-                            )}
-                          </div>
-                        )}
-                        <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                          {clinic.phone && (
-                            <span className="flex items-center gap-1">
-                              <Phone className="w-3 h-3" />
-                              {clinic.phone}
-                            </span>
-                          )}
-                          {clinic.email && (
-                            <span className="flex items-center gap-1">
-                              <Mail className="w-3 h-3" />
-                              {clinic.email}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </label>
-                  ))}
-                </div>
+                <AlertCircle className="w-6 h-6 text-amber-600" />
               )}
             </div>
-          </div>
-
-          {/* Footer */}
-          <div className="border-t px-6 py-4 flex items-center justify-between bg-gray-50 rounded-b-xl">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleReferral}
-              disabled={!selectedClinicId || updateClient.isPending}
-              className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50"
-            >
-              {updateClient.isPending ? (
+            <h3 className="text-lg font-semibold text-gray-900 text-center mb-2">
+              {referralWasSent ? "Close Referral" : "Close Without Sending?"}
+            </h3>
+            <p className="text-sm text-gray-600 text-center mb-6">
+              {referralWasSent ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Processing...
+                  Are you sure you want to close the referral for{" "}
+                  <span className="font-medium">{client.firstName} {client.lastName}</span>?
+                  This will mark them as referred.
                 </>
               ) : (
                 <>
-                  <CheckCircle className="w-4 h-4" />
-                  Complete Referral
+                  No referral email was sent to{" "}
+                  <span className="font-medium">{client.firstName} {client.lastName}</span>.
+                  Are you sure you want to close this referral without sending an email?
                 </>
               )}
-            </button>
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={onCancel}
+                disabled={isLoading}
+                className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={onConfirm}
+                disabled={isLoading}
+                className={`flex-1 px-4 py-2 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2 ${
+                  referralWasSent
+                    ? "bg-green-600 hover:bg-green-700"
+                    : "bg-amber-600 hover:bg-amber-700"
+                }`}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Closing...
+                  </>
+                ) : (
+                  <>
+                    {referralWasSent ? "Close" : "Close Anyway"}
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1269,12 +1446,21 @@ export default function ReferralsPage() {
   // Selected client for reading pane
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
 
-  // Modal state for referral processing
-  const [referralClient, setReferralClient] = useState<Client | null>(null);
-
   // Selected template and clinics for referral email composition
   const [selectedTemplate, setSelectedTemplate] = useState<EmailTemplate | null>(null);
   const [selectedClinics, setSelectedClinics] = useState<ReferralClinic[]>([]);
+
+  // Close confirmation modal state
+  const [closeConfirmClient, setCloseConfirmClient] = useState<Client | null>(null);
+
+  // Closed cases section state
+  const [showClosedSection, setShowClosedSection] = useState(false);
+  const { data: closedReferrals, isLoading: closedLoading, refetch: refetchClosed } = useClosedClients("referral");
+  const [previewClientId, setPreviewClientId] = useState<string | null>(null);
+
+  // Update client hook for closing referrals
+  const updateClient = useUpdateClient();
+  const { addToast } = useToast();
 
   // Filter for pending_referral status
   const pendingReferrals = clients?.filter(
@@ -1303,12 +1489,77 @@ export default function ReferralsPage() {
   };
 
   const handleDoubleClick = (client: Client) => {
-    setReferralClient(client);
+    // Double-click selects the client (same as single click)
+    setSelectedClientId(client.id);
   };
 
-  const handleReferralComplete = () => {
-    setSelectedClientId(null);
+  // Handler when a closed case is reopened
+  const handleReopenSuccess = () => {
     refetch();
+    refetchClosed();
+  };
+
+  // Mark a referral as sent (called when email is successfully sent)
+  const markReferralSent = async (clientId: string, clinicNames: string[]) => {
+    try {
+      // Persist to database
+      await updateClient.mutateAsync({
+        id: clientId,
+        data: {
+          referralEmailSentAt: new Date().toISOString(),
+          referralClinicNames: clinicNames.join(", "),
+        },
+      });
+      // Refetch to update UI
+      refetch();
+    } catch (error) {
+      console.error("Failed to save referral sent status:", error);
+    }
+  };
+
+  // Handle close button click - shows confirmation
+  const handleCloseClick = (client: Client) => {
+    setCloseConfirmClient(client);
+  };
+
+  // Confirm close - update status and remove from list
+  const handleConfirmClose = async () => {
+    if (!closeConfirmClient) return;
+
+    try {
+      await updateClient.mutateAsync({
+        id: closeConfirmClient.id,
+        data: {
+          status: "referred",
+          closedDate: new Date().toISOString(),
+          closedReason: closeConfirmClient.referralEmailSentAt
+            ? "referral_sent"
+            : "closed_without_referral",
+          closedFromWorkflow: "referral",
+          closedFromStatus: closeConfirmClient.status,
+        },
+      });
+
+      addToast({
+        type: "success",
+        title: "Referral closed",
+        message: `${closeConfirmClient.firstName} ${closeConfirmClient.lastName} has been marked as referred.`,
+      });
+
+      // Clear selection if this was the selected client
+      if (selectedClientId === closeConfirmClient.id) {
+        setSelectedClientId(null);
+      }
+
+      setCloseConfirmClient(null);
+      refetch();
+    } catch (error) {
+      addToast({
+        type: "error",
+        title: "Failed to close",
+        message: error instanceof Error ? error.message : "Failed to close referral",
+      });
+    }
   };
 
   if (error) {
@@ -1400,6 +1651,7 @@ export default function ReferralsPage() {
                     isSelected={client.id === selectedClientId}
                     onClick={() => handleClientClick(client)}
                     onDoubleClick={() => handleDoubleClick(client)}
+                    onClose={() => handleCloseClick(client)}
                   />
                 ))}
               </div>
@@ -1416,22 +1668,44 @@ export default function ReferralsPage() {
               selectedClinics={selectedClinics}
               onSelectTemplate={setSelectedTemplate}
               onSelectClinics={setSelectedClinics}
-              onProcessReferral={() => setReferralClient(selectedClient)}
               onClose={() => setSelectedClientId(null)}
+              onCloseCase={() => setCloseConfirmClient(selectedClient)}
+              onReferralSent={(clinicNames) => markReferralSent(selectedClient.id, clinicNames)}
             />
           </div>
         )}
+
+        {/* Closed Cases Section - Always visible at bottom */}
+        <ClosedCasesSection
+          clients={closedReferrals}
+          workflow="referral"
+          isExpanded={showClosedSection}
+          onToggle={() => setShowClosedSection(!showClosedSection)}
+          isLoading={closedLoading}
+          onClientClick={(client) => setPreviewClientId(client.id)}
+          onReopenSuccess={handleReopenSuccess}
+        />
       </div>
 
-      {/* Referral Modal */}
-      {referralClient && (
-        <ReferralModal
-          client={referralClient}
-          isOpen={!!referralClient}
-          onClose={() => setReferralClient(null)}
-          onComplete={handleReferralComplete}
+      {/* Close Confirmation Modal */}
+      {closeConfirmClient && (
+        <CloseConfirmModal
+          client={closeConfirmClient}
+          isOpen={!!closeConfirmClient}
+          referralWasSent={!!closeConfirmClient.referralEmailSentAt}
+          onConfirm={handleConfirmClose}
+          onCancel={() => setCloseConfirmClient(null)}
+          isLoading={updateClient.isPending}
         />
       )}
+
+      {/* Client Preview Modal (for closed cases) */}
+      <ClientPreviewModal
+        clientId={previewClientId}
+        isOpen={!!previewClientId}
+        onClose={() => setPreviewClientId(null)}
+        onActionComplete={handleReopenSuccess}
+      />
     </div>
   );
 }

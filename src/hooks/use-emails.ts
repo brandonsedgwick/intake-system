@@ -1,6 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { EmailTemplate } from "@/types/client";
 
+export interface EmailAttachment {
+  filename: string;
+  mimeType: string;
+  content: string; // Base64 encoded content
+}
+
 export interface EmailPreview {
   to: string;
   from: string;
@@ -56,9 +62,13 @@ export function useSendEmail() {
       clientId: string;
       to: string;
       from?: string;
+      cc?: string;
+      bcc?: string;
       subject: string;
       body: string;
+      bodyFormat?: "html" | "plain";
       templateType?: EmailTemplate["type"];
+      attachments?: EmailAttachment[];
     }) => {
       const response = await fetch("/api/emails/send", {
         method: "POST",

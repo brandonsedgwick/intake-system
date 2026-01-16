@@ -241,3 +241,95 @@ model Communication {
   @@index([timestamp])
   @@map("communications")
 }
+
+// ============================================
+// Clients - Main client records (migrated from Google Sheets)
+// ============================================
+model Client {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+  status    String   @default("new") // ClientStatus type
+
+  source        String  @default("manual") // "google_form" | "manual"
+  formResponseId String? // Row number or unique ID from form responses
+  formTimestamp  String? // Original form submission timestamp
+
+  // Personal Info
+  firstName String
+  lastName  String
+  email     String
+  phone     String?
+  age       String?
+
+  // Payment/Insurance
+  paymentType       String?
+  insuranceProvider String?
+  insuranceMemberId String?
+
+  // Preferences
+  preferredTimes     String? // JSON array of strings
+  requestedClinician String?
+  assignedClinician  String?
+
+  // Form Data - Clinical
+  presentingConcerns         String? // "What would you like to address in therapy?"
+  suicideAttemptRecent       String? // "Have you attempted suicide in the past 6 months?"
+  psychiatricHospitalization String? // "Have you been hospitalized..."
+  additionalInfo             String? // "What else would you like to share?"
+
+  // Evaluation
+  evaluationScore        Int?
+  evaluationNotes        String?
+  referralReason         String?
+  isDuplicate            Boolean @default(false)
+  duplicateOfClientId    String?
+  textEvaluationResult   String? // JSON string of TextEvaluationResult
+
+  // Communication Tracking
+  initialOutreachDate String?
+  followUp1Date       String?
+  followUp2Date       String?
+  nextFollowUpDue     String?
+
+  // Scheduling
+  scheduledDate     String?
+  simplePracticeId  String?
+  paperworkComplete Boolean @default(false)
+
+  // Referral
+  referralEmailSentAt  String?
+  referralClinicNames  String? // Comma-separated list of clinic names
+
+  // Closure
+  closedDate         String?
+  closedReason       String?
+  closedFromWorkflow String? // "evaluation" | "outreach" | "referral" | "scheduling" | "other"
+  closedFromStatus   String? // ClientStatus before closure
+
+  @@index([status])
+  @@index([email])
+  @@index([createdAt])
+  @@index([closedFromWorkflow])
+  @@map("clients")
+}
+
+// ============================================
+// Case Reopen History - Track when closed cases are reopened
+// ============================================
+model CaseReopenHistory {
+  id                 String   @id @default(uuid())
+  clientId           String // References Client in Google Sheets
+  reopenedAt         DateTime @default(now())
+  reopenedBy         String // Email of user who reopened
+  reopenReason       String // Required explanation
+  previousStatus     String // Status before reopening
+  newStatus          String // Status after reopening
+  closedDate         String? // When the case was originally closed
+  closedReason       String? // Original closure reason
+  closedFromWorkflow String? // Which workflow the case was closed from
+
+  @@index([clientId])
+  @@index([reopenedAt])
+  @@map("case_reopen_history")
+}
