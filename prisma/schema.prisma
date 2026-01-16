@@ -55,18 +55,43 @@ model Availability {
 }
 
 // ============================================
+// Template Sections - Custom categories for organizing templates
+// ============================================
+model TemplateSection {
+  id        String   @id @default(uuid())
+  name      String
+  order     Int      @default(0)
+  color     String?  // Optional: blue, green, purple, amber, red
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  templates EmailTemplate[]
+
+  @@index([order])
+  @@map("template_sections")
+}
+
+// ============================================
 // Email Templates - Reusable email content
 // ============================================
 model EmailTemplate {
-  id        String   @id @default(uuid())
-  name      String
-  type      String // initial_outreach, follow_up_1, follow_up_2, referral_*
-  subject   String
-  body      String // Text content (can be long)
-  isActive  Boolean  @default(true)
-  updatedAt DateTime @default(now()) @updatedAt
-  updatedBy String?
+  id         String   @id @default(uuid())
+  name       String
+  type       String   // initial_outreach, follow_up_1, follow_up_2, referral_*
+  subject    String
+  body       String   // HTML or text content (can be long)
+  bodyFormat String   @default("html") // "html" | "plain"
+  isActive   Boolean  @default(false)
+  isDefault  Boolean  @default(false) // Default template for this type
+  sectionId  String?  // Optional section assignment
+  order      Int      @default(0)     // Order within section
+  updatedAt  DateTime @default(now()) @updatedAt
+  updatedBy  String?
 
+  section TemplateSection? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+
+  @@index([type, isDefault])
+  @@index([sectionId, order])
   @@map("email_templates")
 }
 

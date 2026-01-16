@@ -20,6 +20,7 @@ import {
   Clinician,
   AvailabilitySlot,
   EmailTemplate,
+  TemplateSection,
   EvaluationCriteria,
   TextEvaluationRule,
   ReferralClinic,
@@ -286,12 +287,118 @@ export const availabilityDbApi = {
 };
 
 // ============================================
+// Template Sections API
+// ============================================
+export const templateSectionsDbApi = {
+  async getAll(): Promise<TemplateSection[]> {
+    const sections = await prisma.templateSection.findMany({
+      orderBy: { order: "asc" },
+    });
+
+    return sections.map((s) => ({
+      id: s.id,
+      name: s.name,
+      order: s.order,
+      color: s.color as TemplateSection["color"],
+      createdAt: s.createdAt.toISOString(),
+      updatedAt: s.updatedAt.toISOString(),
+    }));
+  },
+
+  async getById(id: string): Promise<TemplateSection | null> {
+    const s = await prisma.templateSection.findUnique({ where: { id } });
+    if (!s) return null;
+
+    return {
+      id: s.id,
+      name: s.name,
+      order: s.order,
+      color: s.color as TemplateSection["color"],
+      createdAt: s.createdAt.toISOString(),
+      updatedAt: s.updatedAt.toISOString(),
+    };
+  },
+
+  async create(
+    section: Omit<TemplateSection, "id" | "createdAt" | "updatedAt">
+  ): Promise<TemplateSection> {
+    const s = await prisma.templateSection.create({
+      data: {
+        name: section.name,
+        order: section.order,
+        color: section.color || null,
+      },
+    });
+
+    return {
+      id: s.id,
+      name: s.name,
+      order: s.order,
+      color: s.color as TemplateSection["color"],
+      createdAt: s.createdAt.toISOString(),
+      updatedAt: s.updatedAt.toISOString(),
+    };
+  },
+
+  async update(
+    id: string,
+    updates: Partial<Omit<TemplateSection, "id" | "createdAt" | "updatedAt">>
+  ): Promise<TemplateSection | null> {
+    const existing = await prisma.templateSection.findUnique({ where: { id } });
+    if (!existing) return null;
+
+    const s = await prisma.templateSection.update({
+      where: { id },
+      data: {
+        name: updates.name ?? existing.name,
+        order: updates.order ?? existing.order,
+        color: updates.color !== undefined ? updates.color || null : existing.color,
+      },
+    });
+
+    return {
+      id: s.id,
+      name: s.name,
+      order: s.order,
+      color: s.color as TemplateSection["color"],
+      createdAt: s.createdAt.toISOString(),
+      updatedAt: s.updatedAt.toISOString(),
+    };
+  },
+
+  async delete(id: string): Promise<boolean> {
+    try {
+      await prisma.templateSection.delete({ where: { id } });
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  async reorder(orderedIds: string[]): Promise<boolean> {
+    try {
+      await prisma.$transaction(
+        orderedIds.map((id, index) =>
+          prisma.templateSection.update({
+            where: { id },
+            data: { order: index },
+          })
+        )
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  },
+};
+
+// ============================================
 // Email Templates API
 // ============================================
 export const templatesDbApi = {
   async getAll(): Promise<EmailTemplate[]> {
     const templates = await prisma.emailTemplate.findMany({
-      orderBy: { name: "asc" },
+      orderBy: [{ sectionId: "asc" }, { order: "asc" }, { name: "asc" }],
     });
 
     return templates.map((t) => ({
@@ -300,15 +407,21 @@ export const templatesDbApi = {
       type: t.type as EmailTemplate["type"],
       subject: t.subject,
       body: t.body,
+      bodyFormat: t.bodyFormat as EmailTemplate["bodyFormat"],
       isActive: t.isActive,
+      isDefault: t.isDefault,
+      sectionId: t.sectionId || undefined,
+      order: t.order,
       updatedAt: t.updatedAt.toISOString(),
       updatedBy: t.updatedBy || undefined,
     }));
   },
 
   async getByType(type: EmailTemplate["type"]): Promise<EmailTemplate | null> {
+    // Get the default template for this type, or first active one
     const t = await prisma.emailTemplate.findFirst({
       where: { type, isActive: true },
+      orderBy: [{ isDefault: "desc" }],
     });
     if (!t) return null;
 
@@ -318,7 +431,33 @@ export const templatesDbApi = {
       type: t.type as EmailTemplate["type"],
       subject: t.subject,
       body: t.body,
+      bodyFormat: t.bodyFormat as EmailTemplate["bodyFormat"],
       isActive: t.isActive,
+      isDefault: t.isDefault,
+      sectionId: t.sectionId || undefined,
+      order: t.order,
+      updatedAt: t.updatedAt.toISOString(),
+      updatedBy: t.updatedBy || undefined,
+    };
+  },
+
+  async getDefaultByType(type: EmailTemplate["type"]): Promise<EmailTemplate | null> {
+    const t = await prisma.emailTemplate.findFirst({
+      where: { type, isDefault: true },
+    });
+    if (!t) return null;
+
+    return {
+      id: t.id,
+      name: t.name,
+      type: t.type as EmailTemplate["type"],
+      subject: t.subject,
+      body: t.body,
+      bodyFormat: t.bodyFormat as EmailTemplate["bodyFormat"],
+      isActive: t.isActive,
+      isDefault: t.isDefault,
+      sectionId: t.sectionId || undefined,
+      order: t.order,
       updatedAt: t.updatedAt.toISOString(),
       updatedBy: t.updatedBy || undefined,
     };
@@ -334,10 +473,36 @@ export const templatesDbApi = {
       type: t.type as EmailTemplate["type"],
       subject: t.subject,
       body: t.body,
+      bodyFormat: t.bodyFormat as EmailTemplate["bodyFormat"],
       isActive: t.isActive,
+      isDefault: t.isDefault,
+      sectionId: t.sectionId || undefined,
+      order: t.order,
       updatedAt: t.updatedAt.toISOString(),
       updatedBy: t.updatedBy || undefined,
     };
+  },
+
+  async getBySectionId(sectionId: string | null): Promise<EmailTemplate[]> {
+    const templates = await prisma.emailTemplate.findMany({
+      where: { sectionId: sectionId },
+      orderBy: [{ order: "asc" }, { name: "asc" }],
+    });
+
+    return templates.map((t) => ({
+      id: t.id,
+      name: t.name,
+      type: t.type as EmailTemplate["type"],
+      subject: t.subject,
+      body: t.body,
+      bodyFormat: t.bodyFormat as EmailTemplate["bodyFormat"],
+      isActive: t.isActive,
+      isDefault: t.isDefault,
+      sectionId: t.sectionId || undefined,
+      order: t.order,
+      updatedAt: t.updatedAt.toISOString(),
+      updatedBy: t.updatedBy || undefined,
+    }));
   },
 
   async create(
@@ -349,7 +514,11 @@ export const templatesDbApi = {
         type: template.type,
         subject: template.subject,
         body: template.body,
+        bodyFormat: template.bodyFormat || "html",
         isActive: template.isActive,
+        isDefault: template.isDefault || false,
+        sectionId: template.sectionId || null,
+        order: template.order || 0,
         updatedBy: template.updatedBy || null,
       },
     });
@@ -360,7 +529,11 @@ export const templatesDbApi = {
       type: t.type as EmailTemplate["type"],
       subject: t.subject,
       body: t.body,
+      bodyFormat: t.bodyFormat as EmailTemplate["bodyFormat"],
       isActive: t.isActive,
+      isDefault: t.isDefault,
+      sectionId: t.sectionId || undefined,
+      order: t.order,
       updatedAt: t.updatedAt.toISOString(),
       updatedBy: t.updatedBy || undefined,
     };
@@ -380,7 +553,11 @@ export const templatesDbApi = {
         type: updates.type ?? existing.type,
         subject: updates.subject ?? existing.subject,
         body: updates.body ?? existing.body,
+        bodyFormat: updates.bodyFormat ?? existing.bodyFormat,
         isActive: updates.isActive ?? existing.isActive,
+        isDefault: updates.isDefault ?? existing.isDefault,
+        sectionId: updates.sectionId !== undefined ? updates.sectionId || null : existing.sectionId,
+        order: updates.order ?? existing.order,
         updatedBy: updates.updatedBy !== undefined ? updates.updatedBy || null : existing.updatedBy,
       },
     });
@@ -391,15 +568,54 @@ export const templatesDbApi = {
       type: t.type as EmailTemplate["type"],
       subject: t.subject,
       body: t.body,
+      bodyFormat: t.bodyFormat as EmailTemplate["bodyFormat"],
       isActive: t.isActive,
+      isDefault: t.isDefault,
+      sectionId: t.sectionId || undefined,
+      order: t.order,
       updatedAt: t.updatedAt.toISOString(),
       updatedBy: t.updatedBy || undefined,
     };
   },
 
+  async setDefault(id: string): Promise<EmailTemplate | null> {
+    const template = await prisma.emailTemplate.findUnique({ where: { id } });
+    if (!template) return null;
+
+    // Transaction: unset current default for this type, set new default
+    await prisma.$transaction([
+      prisma.emailTemplate.updateMany({
+        where: { type: template.type, isDefault: true },
+        data: { isDefault: false },
+      }),
+      prisma.emailTemplate.update({
+        where: { id },
+        data: { isDefault: true },
+      }),
+    ]);
+
+    return this.getById(id);
+  },
+
   async delete(id: string): Promise<boolean> {
     try {
       await prisma.emailTemplate.delete({ where: { id } });
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  async reorderInSection(sectionId: string | null, orderedIds: string[]): Promise<boolean> {
+    try {
+      await prisma.$transaction(
+        orderedIds.map((id, index) =>
+          prisma.emailTemplate.update({
+            where: { id },
+            data: { order: index, sectionId: sectionId },
+          })
+        )
+      );
       return true;
     } catch {
       return false;

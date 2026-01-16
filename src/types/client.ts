@@ -115,6 +115,15 @@ export interface AvailabilitySlot {
   bookedClientId?: string;
 }
 
+export interface TemplateSection {
+  id: string;
+  name: string;
+  order: number;
+  color?: "blue" | "green" | "purple" | "amber" | "red";
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface EmailTemplate {
   id: string;
   name: string;
@@ -128,7 +137,11 @@ export interface EmailTemplate {
     | "referral_clinical";
   subject: string;
   body: string;
+  bodyFormat: "html" | "plain";
   isActive: boolean;
+  isDefault: boolean;
+  sectionId?: string;
+  order: number;
   updatedAt: string;
   updatedBy?: string;
 }
