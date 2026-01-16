@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useMemo, Fragment } from "react";
 import { useClients, useUpdateClient } from "@/hooks/use-clients";
 import { useReferralClinics } from "@/hooks/use-referral-clinics";
-import { useReferralTemplates } from "@/hooks/use-templates";
+import { useReferralTemplates, usePreviewTemplate } from "@/hooks/use-templates";
 import { Client, EmailTemplate, ReferralClinic } from "@/types/client";
 import { formatRelativeTime, formatDate } from "@/lib/utils";
 import Link from "next/link";
@@ -29,6 +29,9 @@ import {
   MapPin,
   Tag,
   StickyNote,
+  Eye,
+  Send,
+  Edit2,
 } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
 
@@ -134,8 +137,8 @@ function Dropdown({ label, icon, selectedLabel, isOpen, onToggle, children }: Dr
 interface ClinicSelectorModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSelect: (clinic: ReferralClinic) => void;
-  selectedClinicId?: string;
+  onSelect: (clinics: ReferralClinic[]) => void;
+  selectedClinics: ReferralClinic[];
   clientConditions?: string; // For highlighting relevant specialties
 }
 
@@ -143,13 +146,40 @@ function ClinicSelectorModal({
   isOpen,
   onClose,
   onSelect,
-  selectedClinicId,
+  selectedClinics,
   clientConditions,
 }: ClinicSelectorModalProps) {
   const { data: clinics, isLoading } = useReferralClinics();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSpecialty, setSelectedSpecialty] = useState<string | null>(null);
   const [expandedClinicId, setExpandedClinicId] = useState<string | null>(null);
+  const [localSelectedClinics, setLocalSelectedClinics] = useState<ReferralClinic[]>(selectedClinics);
+
+  // Sync local state when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setLocalSelectedClinics(selectedClinics);
+    }
+  }, [isOpen, selectedClinics]);
+
+  const isClinicSelected = (clinicId: string) => {
+    return localSelectedClinics.some((c) => c.id === clinicId);
+  };
+
+  const toggleClinicSelection = (clinic: ReferralClinic) => {
+    setLocalSelectedClinics((prev) => {
+      if (prev.some((c) => c.id === clinic.id)) {
+        return prev.filter((c) => c.id !== clinic.id);
+      } else {
+        return [...prev, clinic];
+      }
+    });
+  };
+
+  const handleConfirmSelection = () => {
+    onSelect(localSelectedClinics);
+    onClose();
+  };
 
   // Get all unique specialties from clinics
   const allSpecialties = useMemo(() => {
@@ -218,10 +248,10 @@ function ClinicSelectorModal({
           <div className="border-b px-6 py-4 flex items-center justify-between flex-shrink-0">
             <div>
               <h2 className="text-lg font-semibold text-gray-900">
-                Select Referral Clinic
+                Select Referral Clinics
               </h2>
               <p className="text-sm text-gray-500">
-                Click a row to select a clinic
+                Select one or more clinics to include in the referral email
               </p>
             </div>
             <button
@@ -307,6 +337,7 @@ function ClinicSelectorModal({
               <table className="w-full">
                 <thead className="bg-gray-50 sticky top-0">
                   <tr className="border-b">
+                    <th className="w-10 px-4 py-3"></th>
                     <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">
                       Clinic Name
                     </th>
@@ -324,16 +355,13 @@ function ClinicSelectorModal({
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {filteredClinics.map((clinic) => {
-                    const isSelected = clinic.id === selectedClinicId;
+                    const isSelected = isClinicSelected(clinic.id);
                     const isExpanded = clinic.id === expandedClinicId;
 
                     return (
                       <Fragment key={clinic.id}>
                         <tr
-                          onClick={() => {
-                            onSelect(clinic);
-                            onClose();
-                          }}
+                          onClick={() => toggleClinicSelection(clinic)}
                           className={`cursor-pointer transition-colors ${
                             isSelected
                               ? "bg-amber-50 hover:bg-amber-100"
@@ -341,15 +369,19 @@ function ClinicSelectorModal({
                           }`}
                         >
                           <td className="px-4 py-3">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleClinicSelection(clinic)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-4 h-4 text-amber-600 border-gray-300 rounded focus:ring-amber-500"
+                            />
+                          </td>
+                          <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
                               <span className="font-medium text-gray-900">
                                 {clinic.practiceName}
                               </span>
-                              {isSelected && (
-                                <span className="flex items-center gap-1 px-2 py-0.5 bg-amber-500 text-white text-xs rounded-full">
-                                  <Check className="w-3 h-3" />
-                                </span>
-                              )}
                             </div>
                           </td>
                           <td className="px-4 py-3">
@@ -451,13 +483,27 @@ function ClinicSelectorModal({
           <div className="border-t px-6 py-4 flex items-center justify-between bg-gray-50 rounded-b-xl flex-shrink-0">
             <div className="text-sm text-gray-500">
               {filteredClinics.length} clinic{filteredClinics.length !== 1 ? "s" : ""} found
+              {localSelectedClinics.length > 0 && (
+                <span className="ml-2 text-amber-600 font-medium">
+                  • {localSelectedClinics.length} selected
+                </span>
+              )}
             </div>
-            <button
-              onClick={onClose}
-              className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
-            >
-              Cancel
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={onClose}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmSelection}
+                disabled={localSelectedClinics.length === 0}
+                className="px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Confirm Selection
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -468,9 +514,9 @@ function ClinicSelectorModal({
 interface ReadingPaneProps {
   client: Client;
   selectedTemplate: EmailTemplate | null;
-  selectedClinic: ReferralClinic | null;
+  selectedClinics: ReferralClinic[];
   onSelectTemplate: (template: EmailTemplate | null) => void;
-  onSelectClinic: (clinic: ReferralClinic | null) => void;
+  onSelectClinics: (clinics: ReferralClinic[]) => void;
   onProcessReferral: () => void;
   onClose: () => void;
 }
@@ -478,15 +524,82 @@ interface ReadingPaneProps {
 function ReadingPane({
   client,
   selectedTemplate,
-  selectedClinic,
+  selectedClinics,
   onSelectTemplate,
-  onSelectClinic,
+  onSelectClinics,
   onProcessReferral,
   onClose,
 }: ReadingPaneProps) {
   const { data: templates, isLoading: templatesLoading } = useReferralTemplates();
+  const previewMutation = usePreviewTemplate();
   const [templateDropdownOpen, setTemplateDropdownOpen] = useState(false);
   const [clinicModalOpen, setClinicModalOpen] = useState(false);
+  const [showEmailPreview, setShowEmailPreview] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedSubject, setEditedSubject] = useState("");
+  const [editedBody, setEditedBody] = useState("");
+
+  const canPreview = selectedTemplate && selectedClinics.length > 0;
+
+  // Build clinic information block for the email
+  const buildClinicInfoBlock = (clinics: ReferralClinic[]): string => {
+    if (clinics.length === 0) return "";
+
+    const clinicBlocks = clinics.map((clinic) => {
+      const lines = [`<strong>${clinic.practiceName}</strong>`];
+      if (clinic.address) lines.push(clinic.address);
+      if (clinic.phone) lines.push(`Phone: ${clinic.phone}`);
+      if (clinic.email) lines.push(`Email: ${clinic.email}`);
+      if (clinic.specialties && clinic.specialties.length > 0) {
+        lines.push(`Specialties: ${clinic.specialties.join(", ")}`);
+      }
+      return lines.join("<br>");
+    });
+
+    return `<hr style="border: none; border-top: 2px solid #d1d5db; margin: 24px 0;"><p style="color: #6b7280; font-weight: 600; margin-bottom: 16px;">Recommended Provider${clinics.length > 1 ? "s" : ""}:</p>${clinicBlocks.join("<br><br>")}`;
+  };
+
+  const handlePreviewEmail = async () => {
+    if (!selectedTemplate || selectedClinics.length === 0) return;
+
+    try {
+      // Use the first clinic for template variables (for backwards compatibility)
+      const primaryClinic = selectedClinics[0];
+
+      const result = await previewMutation.mutateAsync({
+        templateId: selectedTemplate.id,
+        variables: {
+          // Required fields
+          clientFirstName: client.firstName,
+          clientLastName: client.lastName,
+          clientEmail: client.email,
+          practiceName: "Therapy Practice", // Will be overridden by settings in actual send
+          // Optional client fields
+          clientPhone: client.phone || undefined,
+          clientAge: client.age || undefined,
+          presentingConcerns: client.presentingConcerns || undefined,
+          paymentType: client.paymentType || undefined,
+          insuranceProvider: client.insuranceProvider || undefined,
+          // Referral clinic fields (primary clinic for template variables)
+          referralClinicName: primaryClinic.practiceName,
+          referralClinicPhone: primaryClinic.phone || undefined,
+          referralClinicEmail: primaryClinic.email || undefined,
+          referralClinicAddress: primaryClinic.address || undefined,
+          referralClinicSpecialties: primaryClinic.specialties.join(", ") || undefined,
+        },
+      });
+
+      // Append clinic information block after the template body
+      const clinicInfoBlock = buildClinicInfoBlock(selectedClinics);
+      const fullBody = result.body + clinicInfoBlock;
+
+      setEditedSubject(result.subject);
+      setEditedBody(fullBody);
+      setShowEmailPreview(true);
+    } catch (error) {
+      console.error("Failed to preview email:", error);
+    }
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -598,33 +711,45 @@ function ReadingPane({
         </Dropdown>
 
         {/* Clinic Selector Button */}
-        <button
+        <div
+          role="button"
+          tabIndex={0}
           onClick={() => {
             setTemplateDropdownOpen(false);
             setClinicModalOpen(true);
           }}
-          className={`flex items-center gap-2 px-3 py-2 text-sm border rounded-lg transition-colors ${
-            selectedClinic
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              setTemplateDropdownOpen(false);
+              setClinicModalOpen(true);
+            }
+          }}
+          className={`flex items-center gap-2 px-3 py-2 text-sm border rounded-lg transition-colors cursor-pointer ${
+            selectedClinics.length > 0
               ? "bg-amber-50 border-amber-300 text-amber-700"
               : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"
           }`}
         >
           <Building2 className="w-4 h-4" />
-          <span className="max-w-[150px] truncate">
-            {selectedClinic?.practiceName || "Select Clinic"}
+          <span className="max-w-[200px] truncate">
+            {selectedClinics.length === 0
+              ? "Select Clinics"
+              : selectedClinics.length === 1
+              ? selectedClinics[0].practiceName
+              : `${selectedClinics.length} clinics selected`}
           </span>
-          {selectedClinic && (
+          {selectedClinics.length > 0 && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onSelectClinic(null);
+                onSelectClinics([]);
               }}
               className="ml-1 p-0.5 hover:bg-amber-200 rounded"
             >
               <X className="w-3 h-3" />
             </button>
           )}
-        </button>
+        </div>
 
         <div className="flex-1" />
 
@@ -632,14 +757,31 @@ function ReadingPane({
         <ClinicSelectorModal
           isOpen={clinicModalOpen}
           onClose={() => setClinicModalOpen(false)}
-          onSelect={onSelectClinic}
-          selectedClinicId={selectedClinic?.id}
+          onSelect={onSelectClinics}
+          selectedClinics={selectedClinics}
           clientConditions={client.presentingConcerns || client.referralReason}
         />
 
+        {/* Preview Email Button - only shown when both template and clinic are selected */}
+        {canPreview && (
+          <button
+            onClick={handlePreviewEmail}
+            disabled={previewMutation.isPending}
+            className="flex items-center gap-2 px-4 py-2 text-amber-700 bg-amber-50 border border-amber-300 rounded-lg hover:bg-amber-100 transition-colors disabled:opacity-50"
+          >
+            {previewMutation.isPending ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Eye className="w-4 h-4" />
+            )}
+            Preview Email
+          </button>
+        )}
+
         <button
           onClick={onProcessReferral}
-          className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
+          disabled={!canPreview}
+          className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <CheckCircle className="w-4 h-4" />
           Process Referral
@@ -784,6 +926,125 @@ function ReadingPane({
           )}
         </div>
       </div>
+
+      {/* Email Preview Modal */}
+      {showEmailPreview && previewMutation.data && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setShowEmailPreview(false)}
+          />
+
+          {/* Modal */}
+          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b">
+              <h2 className="text-xl font-semibold text-gray-900">
+                Preview Referral Email
+              </h2>
+              <button
+                onClick={() => setShowEmailPreview(false)}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="space-y-4">
+                {/* Email metadata */}
+                <div className="grid grid-cols-[80px_1fr] gap-2 text-sm">
+                  <span className="text-gray-500">To:</span>
+                  <span className="text-gray-900">{client.email}</span>
+
+                  <span className="text-gray-500">Subject:</span>
+                  {isEditing ? (
+                    <input
+                      type="text"
+                      value={editedSubject}
+                      onChange={(e) => setEditedSubject(e.target.value)}
+                      className="border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  ) : (
+                    <span className="text-gray-900 font-medium">
+                      {editedSubject}
+                    </span>
+                  )}
+                </div>
+
+                {/* Referral Info Summary */}
+                <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
+                  <div className="text-sm text-amber-800">
+                    <strong>Referring to:</strong>{" "}
+                    {selectedClinics.length === 1
+                      ? `${selectedClinics[0].practiceName}${selectedClinics[0].phone ? ` • ${selectedClinics[0].phone}` : ""}`
+                      : `${selectedClinics.length} clinics`}
+                  </div>
+                  {selectedClinics.length > 1 && (
+                    <ul className="mt-2 text-xs text-amber-700 space-y-1">
+                      {selectedClinics.map((clinic) => (
+                        <li key={clinic.id} className="flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
+                          {clinic.practiceName}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                {/* Email body */}
+                <div className="mt-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-gray-500">Message:</span>
+                    <button
+                      onClick={() => setIsEditing(!isEditing)}
+                      className="flex items-center gap-1 text-sm text-amber-600 hover:text-amber-700"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                      {isEditing ? "Preview" : "Edit"}
+                    </button>
+                  </div>
+
+                  {isEditing ? (
+                    <textarea
+                      value={editedBody}
+                      onChange={(e) => setEditedBody(e.target.value)}
+                      rows={12}
+                      className="w-full border rounded-lg p-4 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  ) : (
+                    <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-700 whitespace-pre-wrap">
+                      {editedBody.replace(/<[^>]*>/g, "")}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-3 p-6 border-t bg-gray-50">
+              <button
+                onClick={() => setShowEmailPreview(false)}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowEmailPreview(false);
+                  onProcessReferral();
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700"
+              >
+                <Send className="w-4 h-4" />
+                Send & Process Referral
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1011,9 +1272,9 @@ export default function ReferralsPage() {
   // Modal state for referral processing
   const [referralClient, setReferralClient] = useState<Client | null>(null);
 
-  // Selected template and clinic for referral email composition
+  // Selected template and clinics for referral email composition
   const [selectedTemplate, setSelectedTemplate] = useState<EmailTemplate | null>(null);
-  const [selectedClinic, setSelectedClinic] = useState<ReferralClinic | null>(null);
+  const [selectedClinics, setSelectedClinics] = useState<ReferralClinic[]>([]);
 
   // Filter for pending_referral status
   const pendingReferrals = clients?.filter(
@@ -1036,7 +1297,7 @@ export default function ReferralsPage() {
     if (client.id !== selectedClientId) {
       // Reset selections when switching clients
       setSelectedTemplate(null);
-      setSelectedClinic(null);
+      setSelectedClinics([]);
     }
     setSelectedClientId(client.id);
   };
@@ -1152,9 +1413,9 @@ export default function ReferralsPage() {
             <ReadingPane
               client={selectedClient}
               selectedTemplate={selectedTemplate}
-              selectedClinic={selectedClinic}
+              selectedClinics={selectedClinics}
               onSelectTemplate={setSelectedTemplate}
-              onSelectClinic={setSelectedClinic}
+              onSelectClinics={setSelectedClinics}
               onProcessReferral={() => setReferralClient(selectedClient)}
               onClose={() => setSelectedClientId(null)}
             />

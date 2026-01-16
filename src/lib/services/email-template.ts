@@ -8,7 +8,7 @@ export interface TemplateVariableDefinition {
   key: string;
   displayName: string;
   description: string;
-  category: "client" | "clinician" | "practice" | "datetime" | "appointment" | "custom";
+  category: "client" | "clinician" | "practice" | "datetime" | "appointment" | "custom" | "referral";
   isRequired: boolean;
   exampleValue: string;
 }
@@ -172,6 +172,48 @@ export const TEMPLATE_VARIABLE_REGISTRY: TemplateVariableDefinition[] = [
     isRequired: false,
     exampleValue: "Looking forward to meeting you!",
   },
+
+  // Referral Clinic Category
+  {
+    key: "referralClinicName",
+    displayName: "Referral Clinic Name",
+    description: "Name of the clinic being referred to",
+    category: "referral",
+    isRequired: false,
+    exampleValue: "Downtown Counseling Center",
+  },
+  {
+    key: "referralClinicPhone",
+    displayName: "Referral Clinic Phone",
+    description: "Phone number of the referral clinic",
+    category: "referral",
+    isRequired: false,
+    exampleValue: "(555) 987-6543",
+  },
+  {
+    key: "referralClinicEmail",
+    displayName: "Referral Clinic Email",
+    description: "Email address of the referral clinic",
+    category: "referral",
+    isRequired: false,
+    exampleValue: "referrals@downtown-counseling.com",
+  },
+  {
+    key: "referralClinicAddress",
+    displayName: "Referral Clinic Address",
+    description: "Address of the referral clinic",
+    category: "referral",
+    isRequired: false,
+    exampleValue: "123 Main St, Suite 200, Anytown, ST 12345",
+  },
+  {
+    key: "referralClinicSpecialties",
+    displayName: "Referral Clinic Specialties",
+    description: "Specialties offered by the referral clinic",
+    category: "referral",
+    isRequired: false,
+    exampleValue: "Anxiety, Depression, PTSD",
+  },
 ];
 
 /**
@@ -201,6 +243,10 @@ export const VARIABLE_CATEGORIES = {
   custom: {
     label: "Custom Content",
     description: "Custom content you can add when sending",
+  },
+  referral: {
+    label: "Referral Clinic",
+    description: "Information about the clinic being referred to",
   },
 } as const;
 
@@ -269,6 +315,13 @@ export interface TemplateVariables {
 
   // Custom
   customMessage?: string;
+
+  // Referral Clinic
+  referralClinicName?: string;
+  referralClinicPhone?: string;
+  referralClinicEmail?: string;
+  referralClinicAddress?: string;
+  referralClinicSpecialties?: string;
 }
 
 /**
@@ -344,6 +397,11 @@ const VARIABLE_FALLBACKS: Record<string, string> = {
   currentDay: "",
   appointmentDate: "TBD",
   appointmentTime: "TBD",
+  referralClinicName: "",
+  referralClinicPhone: "",
+  referralClinicEmail: "",
+  referralClinicAddress: "",
+  referralClinicSpecialties: "",
 };
 
 // ============================================
@@ -462,6 +520,11 @@ export function buildSampleVariables(): TemplateVariables {
     appointmentDate: "January 20, 2026",
     appointmentTime: "2:30 PM",
     customMessage: "Looking forward to meeting you!",
+    referralClinicName: "Downtown Counseling Center",
+    referralClinicPhone: "(555) 987-6543",
+    referralClinicEmail: "referrals@downtown-counseling.com",
+    referralClinicAddress: "123 Main St, Suite 200, Anytown, ST 12345",
+    referralClinicSpecialties: "Anxiety, Depression, PTSD",
   };
   return sampleVars;
 }
