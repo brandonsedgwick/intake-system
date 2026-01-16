@@ -1068,29 +1068,36 @@ function ReadingPane({
             </div>
           )}
 
-          {/* Clinical Flags */}
-          {(client.suicideAttemptRecent || client.psychiatricHospitalization) && (
-            <div className="bg-red-50 rounded-lg border border-red-200 p-4 lg:col-span-2">
-              <h3 className="text-sm font-semibold text-red-800 mb-3 flex items-center gap-2">
-                <AlertCircle className="w-4 h-4" />
-                Clinical Flags
-              </h3>
-              <div className="space-y-2 text-sm">
-                {client.suicideAttemptRecent && (
-                  <div className="flex items-center gap-2 text-red-700">
-                    <span className="w-2 h-2 bg-red-500 rounded-full"></span>
-                    Recent suicide attempt reported
-                  </div>
-                )}
-                {client.psychiatricHospitalization && (
-                  <div className="flex items-center gap-2 text-red-700">
-                    <span className="w-2 h-2 bg-red-500 rounded-full"></span>
-                    Psychiatric hospitalization history
-                  </div>
-                )}
+          {/* Clinical Flags - Only show if client explicitly answered "Yes" */}
+          {(() => {
+            const hasSuicideFlag = client.suicideAttemptRecent?.toLowerCase().trim() === "yes";
+            const hasHospitalizationFlag = client.psychiatricHospitalization?.toLowerCase().trim() === "yes";
+
+            if (!hasSuicideFlag && !hasHospitalizationFlag) return null;
+
+            return (
+              <div className="bg-red-50 rounded-lg border border-red-200 p-4 lg:col-span-2">
+                <h3 className="text-sm font-semibold text-red-800 mb-3 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4" />
+                  Clinical Flags
+                </h3>
+                <div className="space-y-2 text-sm">
+                  {hasSuicideFlag && (
+                    <div className="flex items-center gap-2 text-red-700">
+                      <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+                      Recent suicide attempt reported
+                    </div>
+                  )}
+                  {hasHospitalizationFlag && (
+                    <div className="flex items-center gap-2 text-red-700">
+                      <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+                      Psychiatric hospitalization history
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       </div>
 
