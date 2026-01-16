@@ -15,12 +15,14 @@ import {
   FileText,
   Settings,
   LogOut,
+  Building2,
 } from "lucide-react";
 import { useClients } from "@/hooks/use-clients";
 
 const secondaryNavigation = [
   { name: "Clinicians", href: "/clinicians", icon: User },
   { name: "Templates", href: "/templates", icon: FileText },
+  { name: "Referral Clinics", href: "/referral-clinics", icon: Building2 },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 

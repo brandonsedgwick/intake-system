@@ -235,17 +235,17 @@ export function TemplatesPage() {
               </p>
 
               <div className="space-y-3">
-                <button
-                  onClick={handleCreateTemplate}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  <FileText className="w-5 h-5" />
-                  Create Your First Template
-                </button>
-
-                {templates.length > 0 && (
+                {templates.length === 0 ? (
+                  <button
+                    onClick={handleCreateTemplate}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    <FileText className="w-5 h-5" />
+                    Create Your First Template
+                  </button>
+                ) : (
                   <p className="text-sm text-gray-500">
-                    Or select a template from the sidebar to edit it
+                    Select a template from the sidebar to edit it, or create a new one.
                   </p>
                 )}
               </div>

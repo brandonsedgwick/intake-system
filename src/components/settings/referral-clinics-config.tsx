@@ -31,6 +31,8 @@ import {
   ToggleLeft,
   ToggleRight,
   GripVertical,
+  Search,
+  Tag,
 } from "lucide-react";
 
 // Field types for custom fields
@@ -439,8 +441,52 @@ export function ReferralClinicsConfig() {
   const [isCreating, setIsCreating] = useState(false);
   const [expandedClinics, setExpandedClinics] = useState<Set<string>>(new Set());
   const [showCustomFields, setShowCustomFields] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
 
   const customFields = config?.customFields || [];
+
+  // Get all unique specialties for keyword tags
+  const allSpecialties = Array.from(
+    new Set((clinics || []).flatMap((c) => c.specialties))
+  ).sort();
+
+  // Filter clinics based on search and selected tags
+  const filteredClinics = (clinics || []).filter((clinic) => {
+    // Search filter
+    const searchLower = searchQuery.toLowerCase();
+    const matchesSearch =
+      !searchQuery ||
+      clinic.practiceName.toLowerCase().includes(searchLower) ||
+      clinic.specialties.some((s) => s.toLowerCase().includes(searchLower)) ||
+      clinic.address?.toLowerCase().includes(searchLower) ||
+      clinic.email?.toLowerCase().includes(searchLower) ||
+      clinic.notes?.toLowerCase().includes(searchLower);
+
+    // Tag filter - clinic must have ALL selected tags
+    const matchesTags =
+      selectedTags.size === 0 ||
+      Array.from(selectedTags).every((tag) => clinic.specialties.includes(tag));
+
+    return matchesSearch && matchesTags;
+  });
+
+  const toggleTag = (tag: string) => {
+    setSelectedTags((prev) => {
+      const next = new Set(prev);
+      if (next.has(tag)) {
+        next.delete(tag);
+      } else {
+        next.add(tag);
+      }
+      return next;
+    });
+  };
+
+  const clearFilters = () => {
+    setSearchQuery("");
+    setSelectedTags(new Set());
+  };
 
   const toggleClinic = (id: string) => {
     setExpandedClinics((prev) => {
@@ -550,6 +596,65 @@ export function ReferralClinicsConfig() {
         </div>
       </div>
 
+      {/* Search and Filter */}
+      <div className="space-y-3">
+        {/* Search Bar */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search clinics by name, specialty, address..."
+            className="w-full pl-10 pr-4 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+          />
+          {(searchQuery || selectedTags.size > 0) && (
+            <button
+              onClick={clearFilters}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
+        {/* Keyword Tags */}
+        {allSpecialties.length > 0 && (
+          <div className="flex items-start gap-2">
+            <Tag className="w-4 h-4 text-gray-400 mt-1.5 flex-shrink-0" />
+            <div className="flex flex-wrap gap-1.5">
+              {allSpecialties.map((specialty) => (
+                <button
+                  key={specialty}
+                  onClick={() => toggleTag(specialty)}
+                  className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                    selectedTags.has(specialty)
+                      ? "bg-amber-600 text-white"
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  }`}
+                >
+                  {specialty}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Active Filters */}
+        {(searchQuery || selectedTags.size > 0) && (
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <span>
+              Showing {filteredClinics.length} of {clinics?.length || 0} clinics
+            </span>
+            {selectedTags.size > 0 && (
+              <span className="text-amber-600">
+                ({selectedTags.size} tag{selectedTags.size !== 1 ? "s" : ""} selected)
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Custom Fields Configuration */}
       {showCustomFields && (
         <CustomFieldsConfig
@@ -585,6 +690,9 @@ export function ReferralClinicsConfig() {
             {clinics.length - activeClinics.length} inactive
           </span>
         )}
+        {allSpecialties.length > 0 && (
+          <span className="text-amber-600">{allSpecialties.length} specialties</span>
+        )}
       </div>
 
       {/* Clinics List */}
@@ -598,9 +706,20 @@ export function ReferralClinicsConfig() {
                 Click &quot;Add Clinic&quot; to add your first referral clinic.
               </p>
             </div>
+          ) : filteredClinics.length === 0 ? (
+            <div className="border-2 border-dashed border-gray-200 rounded-lg p-8 text-center">
+              <Search className="w-8 h-8 mx-auto text-gray-400 mb-2" />
+              <p className="text-gray-600">No clinics match your search.</p>
+              <p className="text-sm text-gray-500 mt-1">
+                Try different keywords or{" "}
+                <button onClick={clearFilters} className="text-amber-600 hover:underline">
+                  clear filters
+                </button>
+              </p>
+            </div>
           ) : (
             <div className="space-y-2">
-              {clinics.map((clinic) => {
+              {filteredClinics.map((clinic) => {
                 const isExpanded = expandedClinics.has(clinic.id);
 
                 return (

@@ -60,15 +60,8 @@ export function useTemplatesBySection(sectionId: string | null) {
 export function useReferralTemplates() {
   const { data: templates, ...rest } = useTemplates();
 
-  // Filter to only referral-type templates
-  const referralTemplates = templates?.filter(
-    (t) =>
-      t.isActive &&
-      (t.type === "referral_insurance" ||
-        t.type === "referral_specialty" ||
-        t.type === "referral_capacity" ||
-        t.type === "referral_clinical")
-  );
+  // Return all active templates for referral selection
+  const referralTemplates = templates?.filter((t) => t.isActive);
 
   return { data: referralTemplates, ...rest };
 }

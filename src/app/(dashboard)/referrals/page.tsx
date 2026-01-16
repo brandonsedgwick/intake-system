@@ -45,7 +45,7 @@ function ClientRow({
 }) {
   return (
     <div
-      className={`px-4 py-3 flex items-center justify-between cursor-pointer transition-colors ${
+      className={`px-4 py-3 flex items-center gap-6 cursor-pointer transition-colors ${
         isSelected
           ? "bg-amber-50 border-l-4 border-amber-500"
           : "hover:bg-gray-50 border-l-4 border-transparent"
@@ -56,7 +56,7 @@ function ClientRow({
         onDoubleClick();
       }}
     >
-      <div className="flex items-center gap-3 min-w-0">
+      <div className="flex items-center gap-3 min-w-0 w-48 flex-shrink-0">
         <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 font-medium text-sm flex-shrink-0">
           {client.firstName[0]}
           {client.lastName[0]}
@@ -69,14 +69,17 @@ function ClientRow({
         </div>
       </div>
 
-      <div className="flex items-center gap-4 flex-shrink-0">
-        {client.referralReason && (
-          <div className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded max-w-[150px] truncate hidden lg:block">
-            {client.referralReason}
-          </div>
-        )}
-        <div className="text-xs text-gray-500">{formatRelativeTime(client.createdAt)}</div>
+      <div className="text-xs text-gray-500 hidden sm:block flex-shrink-0">
+        <div>{formatDate(client.createdAt)}</div>
+        <div className="text-gray-400">{formatRelativeTime(client.createdAt)}</div>
       </div>
+      <div className="text-xs text-gray-500 sm:hidden flex-shrink-0">{formatRelativeTime(client.createdAt)}</div>
+
+      {client.referralReason && (
+        <div className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded max-w-[200px] truncate hidden lg:block flex-shrink-0">
+          {client.referralReason}
+        </div>
+      )}
     </div>
   );
 }
