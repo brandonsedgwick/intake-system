@@ -116,6 +116,10 @@ export interface Client {
   referralEmailSentAt?: string;
   referralClinicNames?: string; // Comma-separated list of clinic names
 
+  // Availability Tracking
+  offeredAvailability?: string; // JSON string of OfferedSlot[]
+  acceptedSlot?: string; // JSON string of AcceptedSlot
+
   // Closure
   closedDate?: string;
   closedReason?: string;
@@ -161,6 +165,45 @@ export interface AvailabilitySlot {
   specificDate?: string;
   isBooked: boolean;
   bookedClientId?: string;
+}
+
+// Sheet-based availability (from external Google Sheet)
+export interface SheetAvailabilitySlot {
+  id: string;           // generated: `${day}-${time}` (normalized)
+  day: string;          // "Monday", "Tuesday", etc.
+  time: string;         // "9:00 AM", "10:00 AM", etc.
+  clinicians: string[]; // ["John Smith", "Jane Doe"]
+  insurance: string;    // Raw insurance string from sheet
+}
+
+// Offered slot - tracked on client when availability is included in an email
+export interface OfferedSlot {
+  slotId: string;       // day-time identifier matching SheetAvailabilitySlot.id
+  day: string;
+  time: string;
+  clinicians: string[]; // clinicians offered for this slot
+  offeredAt: string;    // ISO timestamp when offered
+}
+
+// Accepted slot - when client accepts a specific slot
+export interface AcceptedSlot {
+  slotId: string;
+  day: string;
+  time: string;
+  clinician: string;    // single clinician who was selected
+  acceptedAt: string;   // ISO timestamp
+}
+
+// Booked slot - stored in database to track globally booked slots
+export interface BookedSlot {
+  id: string;
+  slotId: string;       // matches sheet slot id
+  day: string;
+  time: string;
+  clinician: string;
+  clientId: string;
+  bookedAt: string;
+  createdAt: string;
 }
 
 export interface TemplateSection {

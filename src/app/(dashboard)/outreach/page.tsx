@@ -4,7 +4,14 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { useClients, useUpdateClient, useClosedClients } from "@/hooks/use-clients";
 import { useTemplates, usePreviewTemplate } from "@/hooks/use-templates";
 import { useSendEmail, EmailAttachment } from "@/hooks/use-emails";
-import { Client, EmailTemplate, ClientStatus } from "@/types/client";
+import { useClinicians } from "@/hooks/use-clinicians";
+import {
+  useAvailabilityFromSheets,
+  useBookedSlots,
+  useCreateBookedSlot,
+  matchesInsurance,
+} from "@/hooks/use-availability-sheets";
+import { Client, EmailTemplate, ClientStatus, SheetAvailabilitySlot, OfferedSlot, AcceptedSlot } from "@/types/client";
 import { ClosedCasesSection } from "@/components/clients/closed-cases-section";
 import { ClientPreviewModal } from "@/components/clients/client-preview-modal";
 import { RichTextEditor } from "@/components/templates/rich-text-editor";
@@ -38,6 +45,8 @@ import {
   ArrowRight,
   Reply,
   MailCheck,
+  Shield,
+  RefreshCw,
 } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
 
@@ -316,6 +325,404 @@ function Dropdown({ label, icon, selectedLabel, isOpen, onToggle, children }: Dr
   );
 }
 
+// Selected slot tracking for availability modal
+interface SelectedSlotInfo {
+  slotId: string;
+  day: string;
+  time: string;
+  clinicians: string[]; // Selected clinicians for this slot
+}
+
+// Availability Modal Component - Uses real data from Google Sheets
+interface AvailabilityModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onInsertAvailability: (availabilityText: string, selectedSlots: SelectedSlotInfo[]) => void;
+  client: Client;
+}
+
+function AvailabilityModal({ isOpen, onClose, onInsertAvailability, client }: AvailabilityModalProps) {
+  const { data: slots, isLoading: slotsLoading, refetch, isFetching } = useAvailabilityFromSheets();
+  const { data: bookedSlots } = useBookedSlots();
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const [insuranceFilter, setInsuranceFilter] = useState<"all" | "matching">("matching");
+  const [selectedSlots, setSelectedSlots] = useState<SelectedSlotInfo[]>([]);
+
+  // Parse client's previously offered slots
+  const previouslyOffered = useMemo(() => {
+    if (!client.offeredAvailability) return new Set<string>();
+    try {
+      const offered: OfferedSlot[] = JSON.parse(client.offeredAvailability);
+      return new Set(offered.map((o) => o.slotId));
+    } catch {
+      return new Set<string>();
+    }
+  }, [client.offeredAvailability]);
+
+  // Create set of booked slot+clinician combinations
+  const bookedSet = useMemo(() => {
+    const set = new Set<string>();
+    bookedSlots?.forEach((b) => {
+      set.add(`${b.slotId}-${b.clinician}`);
+    });
+    return set;
+  }, [bookedSlots]);
+
+  // Get unique insurance values
+  const uniqueInsurances = useMemo(() => {
+    if (!slots) return [];
+    const insurances = new Set<string>();
+    slots.forEach((slot) => {
+      if (slot.insurance) insurances.add(slot.insurance);
+    });
+    return Array.from(insurances).sort();
+  }, [slots]);
+
+  // Filter slots
+  const filteredSlots = useMemo(() => {
+    if (!slots) return [];
+
+    return slots.filter((slot) => {
+      // Search filter
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const matchesSearch =
+          slot.day.toLowerCase().includes(query) ||
+          slot.time.toLowerCase().includes(query) ||
+          slot.clinicians.some((c) => c.toLowerCase().includes(query)) ||
+          slot.insurance.toLowerCase().includes(query);
+        if (!matchesSearch) return false;
+      }
+
+      // Insurance filter - show matching only
+      if (insuranceFilter === "matching" && client.insuranceProvider) {
+        if (!matchesInsurance(slot, client.insuranceProvider)) return false;
+      }
+
+      return true;
+    });
+  }, [slots, searchQuery, insuranceFilter, client.insuranceProvider]);
+
+  // Check if a clinician in a slot is booked
+  const isClinicianBooked = (slotId: string, clinician: string) => {
+    return bookedSet.has(`${slotId}-${clinician}`);
+  };
+
+  // Check if slot is fully booked
+  const isFullyBooked = (slot: SheetAvailabilitySlot) => {
+    return slot.clinicians.every((c) => isClinicianBooked(slot.id, c));
+  };
+
+  // Toggle clinician selection within a slot
+  const handleToggleClinician = (slot: SheetAvailabilitySlot, clinician: string) => {
+    setSelectedSlots((prev) => {
+      const existingSlotIndex = prev.findIndex((s) => s.slotId === slot.id);
+
+      if (existingSlotIndex === -1) {
+        // Add new slot with this clinician
+        return [
+          ...prev,
+          {
+            slotId: slot.id,
+            day: slot.day,
+            time: slot.time,
+            clinicians: [clinician],
+          },
+        ];
+      }
+
+      const existingSlot = prev[existingSlotIndex];
+      const clinicianIndex = existingSlot.clinicians.indexOf(clinician);
+
+      if (clinicianIndex === -1) {
+        // Add clinician to existing slot
+        const updatedSlot = {
+          ...existingSlot,
+          clinicians: [...existingSlot.clinicians, clinician],
+        };
+        return [...prev.slice(0, existingSlotIndex), updatedSlot, ...prev.slice(existingSlotIndex + 1)];
+      } else {
+        // Remove clinician from slot
+        const newClinicians = existingSlot.clinicians.filter((c) => c !== clinician);
+        if (newClinicians.length === 0) {
+          // Remove the slot entirely
+          return prev.filter((s) => s.slotId !== slot.id);
+        }
+        const updatedSlot = { ...existingSlot, clinicians: newClinicians };
+        return [...prev.slice(0, existingSlotIndex), updatedSlot, ...prev.slice(existingSlotIndex + 1)];
+      }
+    });
+  };
+
+  // Check if a clinician is selected
+  const isClinicianSelected = (slotId: string, clinician: string) => {
+    const slot = selectedSlots.find((s) => s.slotId === slotId);
+    return slot?.clinicians.includes(clinician) || false;
+  };
+
+  // Build availability text for email
+  const handleInsert = () => {
+    if (selectedSlots.length === 0) return;
+
+    // Build formatted availability text
+    const lines: string[] = [];
+
+    selectedSlots.forEach((slot) => {
+      const clinicianList = slot.clinicians.join(" or ");
+      lines.push(`• ${slot.day} at ${slot.time} with ${clinicianList}`);
+    });
+
+    let availabilityText = "";
+    if (lines.length === 1) {
+      const slot = selectedSlots[0];
+      const clinicianList = slot.clinicians.join(" or ");
+      availabilityText = `I have availability on ${slot.day} at ${slot.time} with ${clinicianList}.`;
+    } else {
+      availabilityText = `I have the following availability:\n${lines.join("\n")}`;
+    }
+
+    onInsertAvailability(availabilityText, selectedSlots);
+    handleClose();
+  };
+
+  const handleClose = () => {
+    onClose();
+    setSearchQuery("");
+    setSelectedSlots([]);
+  };
+
+  // Count total selected clinicians
+  const totalSelectedClinicians = selectedSlots.reduce((sum, s) => sum + s.clinicians.length, 0);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50" onClick={handleClose} />
+
+      {/* Modal */}
+      <div className="relative bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+              <Calendar className="w-5 h-5 text-purple-600" />
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900">Find Availability</h2>
+              <p className="text-sm text-gray-500">
+                Select time slots to offer to {client.firstName}
+                {client.insuranceProvider && (
+                  <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-700">
+                    <Shield className="w-3 h-3 mr-1" />
+                    {client.insuranceProvider}
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Refresh availability"
+            >
+              <RefreshCw className={`w-5 h-5 ${isFetching ? "animate-spin" : ""}`} />
+            </button>
+            <button
+              onClick={handleClose}
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="px-6 py-3 border-b bg-gray-50 flex items-center gap-4">
+          {/* Search */}
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search by day, time, clinician..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
+            />
+          </div>
+
+          {/* Insurance filter toggle */}
+          {client.insuranceProvider && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setInsuranceFilter(insuranceFilter === "all" ? "matching" : "all")}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+                  insuranceFilter === "matching"
+                    ? "bg-blue-100 text-blue-700 border border-blue-200"
+                    : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
+                }`}
+              >
+                <Shield className="w-4 h-4" />
+                {insuranceFilter === "matching" ? "Insurance Match" : "Show All"}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {slotsLoading ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-purple-600 mb-4" />
+              <p className="text-gray-500">Loading availability...</p>
+            </div>
+          ) : !slots || slots.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <Calendar className="w-12 h-12 text-gray-300 mb-4" />
+              <p className="text-gray-900 font-medium mb-2">No availability found</p>
+              <p className="text-gray-500 text-sm">
+                Check the availability spreadsheet for data
+              </p>
+            </div>
+          ) : filteredSlots.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <Search className="w-12 h-12 text-gray-300 mb-4" />
+              <p className="text-gray-900 font-medium mb-2">No matching slots</p>
+              <p className="text-gray-500 text-sm">
+                Try adjusting your search or{" "}
+                <button
+                  onClick={() => setInsuranceFilter("all")}
+                  className="text-purple-600 hover:underline"
+                >
+                  show all insurance types
+                </button>
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredSlots.map((slot) => {
+                const fullyBooked = isFullyBooked(slot);
+                const wasOffered = previouslyOffered.has(slot.id);
+                const insuranceMatches = matchesInsurance(slot, client.insuranceProvider);
+
+                return (
+                  <div
+                    key={slot.id}
+                    className={`rounded-lg border p-4 transition-colors ${
+                      fullyBooked
+                        ? "bg-gray-50 border-gray-200 opacity-60"
+                        : wasOffered
+                        ? "border-amber-300 bg-amber-50"
+                        : "border-gray-200 hover:border-gray-300"
+                    }`}
+                  >
+                    {/* Slot header */}
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className={`font-medium ${fullyBooked ? "text-gray-400 line-through" : "text-gray-900"}`}>
+                          {slot.day} at {slot.time}
+                        </div>
+                        {wasOffered && !fullyBooked && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-200 text-amber-800">
+                            Previously offered
+                          </span>
+                        )}
+                        {fullyBooked && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+                            Fully booked
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {insuranceMatches && (
+                          <span className="flex items-center gap-1 text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded-full">
+                            <CheckCircle className="w-3 h-3" />
+                            Insurance
+                          </span>
+                        )}
+                        {slot.insurance && (
+                          <span className="text-xs text-gray-500">{slot.insurance}</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Clinician selection */}
+                    <div className="flex flex-wrap gap-2">
+                      {slot.clinicians.map((clinician) => {
+                        const isBooked = isClinicianBooked(slot.id, clinician);
+                        const isSelected = isClinicianSelected(slot.id, clinician);
+
+                        return (
+                          <label
+                            key={clinician}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
+                              isBooked
+                                ? "bg-gray-100 border-gray-200 opacity-50 cursor-not-allowed"
+                                : isSelected
+                                ? "bg-purple-100 border-purple-500"
+                                : "bg-white border-gray-200 hover:border-purple-300 hover:bg-purple-50"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              disabled={isBooked}
+                              onChange={() => handleToggleClinician(slot, clinician)}
+                              className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 disabled:opacity-50"
+                            />
+                            <span className={`text-sm ${isBooked ? "text-gray-400 line-through" : "text-gray-900"}`}>
+                              {clinician}
+                            </span>
+                            {isBooked && (
+                              <span className="text-xs text-red-500">(Booked)</span>
+                            )}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between p-6 border-t bg-gray-50">
+          <div className="text-sm text-gray-500">
+            {totalSelectedClinicians > 0 && (
+              <span>
+                {selectedSlots.length} slot{selectedSlots.length !== 1 ? "s" : ""},{" "}
+                {totalSelectedClinicians} option{totalSelectedClinicians !== 1 ? "s" : ""} selected
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleClose}
+              className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleInsert}
+              disabled={selectedSlots.length === 0}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              Insert Availability
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Reading Pane Component
 interface ReadingPaneProps {
   client: Client;
@@ -341,11 +748,13 @@ function ReadingPane({
   const { data: allTemplates, isLoading: templatesLoading } = useTemplates();
   const previewMutation = usePreviewTemplate();
   const sendEmailMutation = useSendEmail();
+  const updateClientMutation = useUpdateClient();
   const { addToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [templateDropdownOpen, setTemplateDropdownOpen] = useState(false);
   const [showEmailPreview, setShowEmailPreview] = useState(false);
+  const [showAvailabilityModal, setShowAvailabilityModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [sendSuccess, setSendSuccess] = useState(false);
 
@@ -356,6 +765,9 @@ function ReadingPane({
   const [editedSubject, setEditedSubject] = useState("");
   const [editedBody, setEditedBody] = useState("");
   const [attachments, setAttachments] = useState<EmailAttachment[]>([]);
+
+  // Track slots selected from availability modal to save when email is sent
+  const [pendingOfferedSlots, setPendingOfferedSlots] = useState<SelectedSlotInfo[]>([]);
 
   // Filter templates to outreach types only
   const outreachTemplates = useMemo(() => {
@@ -484,6 +896,40 @@ function ReadingPane({
         templateType: selectedTemplate?.type,
         attachments: attachments.length > 0 ? attachments : undefined,
       });
+
+      // Save offered availability if any slots were selected
+      if (pendingOfferedSlots.length > 0) {
+        const now = new Date().toISOString();
+        const newOfferedSlots: OfferedSlot[] = pendingOfferedSlots.map((slot) => ({
+          slotId: slot.slotId,
+          day: slot.day,
+          time: slot.time,
+          clinicians: slot.clinicians,
+          offeredAt: now,
+        }));
+
+        // Parse existing offered slots and append new ones
+        let existingSlots: OfferedSlot[] = [];
+        if (client.offeredAvailability) {
+          try {
+            existingSlots = JSON.parse(client.offeredAvailability);
+          } catch {
+            // Invalid JSON, start fresh
+          }
+        }
+
+        const allOfferedSlots = [...existingSlots, ...newOfferedSlots];
+
+        await updateClientMutation.mutateAsync({
+          id: client.id,
+          data: {
+            offeredAvailability: JSON.stringify(allOfferedSlots),
+          },
+        });
+
+        // Clear pending slots
+        setPendingOfferedSlots([]);
+      }
 
       setSendSuccess(true);
       onEmailSent();
@@ -636,6 +1082,15 @@ function ReadingPane({
           )}
         </Dropdown>
 
+        {/* Find Availability Button */}
+        <button
+          onClick={() => setShowAvailabilityModal(true)}
+          className="flex items-center gap-2 px-4 py-2 text-purple-700 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors"
+        >
+          <Calendar className="w-4 h-4" />
+          Find Availability
+        </button>
+
         {/* Send Email Button */}
         {selectedTemplate && (
           <button
@@ -752,6 +1207,91 @@ function ReadingPane({
             </dl>
           </div>
 
+          {/* Offered Availability */}
+          {(() => {
+            let offeredSlots: OfferedSlot[] = [];
+            if (client.offeredAvailability) {
+              try {
+                offeredSlots = JSON.parse(client.offeredAvailability);
+              } catch {
+                // Invalid JSON, ignore
+              }
+            }
+
+            // Parse accepted slot if exists
+            let acceptedSlot: { slotId: string; day: string; time: string; clinician: string; acceptedAt: string } | null = null;
+            if (client.acceptedSlot) {
+              try {
+                acceptedSlot = JSON.parse(client.acceptedSlot);
+              } catch {
+                // Invalid JSON, ignore
+              }
+            }
+
+            // Group offered slots by date
+            const slotsByDate = offeredSlots.reduce((acc, slot) => {
+              const date = new Date(slot.offeredAt).toLocaleDateString();
+              if (!acc[date]) {
+                acc[date] = [];
+              }
+              acc[date].push(slot);
+              return acc;
+            }, {} as Record<string, OfferedSlot[]>);
+
+            const sortedDates = Object.keys(slotsByDate).sort(
+              (a, b) => new Date(b).getTime() - new Date(a).getTime()
+            );
+
+            if (offeredSlots.length === 0 && !acceptedSlot) return null;
+
+            return (
+              <div className="bg-white rounded-lg border p-4">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <Calendar className="w-4 h-4" />
+                  {acceptedSlot ? "Scheduled Slot" : "Offered Availability"}
+                </h3>
+
+                {acceptedSlot ? (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                    <div className="flex items-center gap-2 text-green-800 font-medium">
+                      <CheckCircle className="w-4 h-4" />
+                      {acceptedSlot.day} at {acceptedSlot.time}
+                    </div>
+                    <p className="text-sm text-green-700 mt-1">
+                      with {acceptedSlot.clinician}
+                    </p>
+                    <p className="text-xs text-green-600 mt-1">
+                      Accepted {formatDate(acceptedSlot.acceptedAt)}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {sortedDates.map((date) => (
+                      <div key={date}>
+                        <p className="text-xs font-medium text-gray-500 mb-1">
+                          Offered {date}
+                        </p>
+                        <ul className="space-y-1">
+                          {slotsByDate[date].map((slot, idx) => (
+                            <li
+                              key={`${slot.slotId}-${idx}`}
+                              className="text-sm text-gray-700 flex items-start gap-2"
+                            >
+                              <span className="text-amber-500 mt-0.5">•</span>
+                              <span>
+                                {slot.day} {slot.time} — {slot.clinicians.join(", ")}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {/* Insurance & Payment */}
           <div className="bg-white rounded-lg border p-4">
             <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
@@ -843,6 +1383,30 @@ function ReadingPane({
           })()}
         </div>
       </div>
+
+      {/* Availability Modal */}
+      <AvailabilityModal
+        isOpen={showAvailabilityModal}
+        onClose={() => setShowAvailabilityModal(false)}
+        client={client}
+        onInsertAvailability={(text, selectedSlots) => {
+          // Track selected slots for when email is sent
+          setPendingOfferedSlots(selectedSlots);
+
+          // If email preview is open and in edit mode, append to body
+          if (showEmailPreview && isEditing) {
+            setEditedBody((prev) => prev + "\n\n" + text);
+          } else {
+            // Store in clipboard and show toast
+            navigator.clipboard.writeText(text);
+            addToast({
+              type: "success",
+              title: "Copied to clipboard",
+              message: "Availability has been copied. Paste it into your email.",
+            });
+          }
+        }}
+      />
 
       {/* Email Preview Modal */}
       {showEmailPreview && previewMutation.data && (
@@ -1215,6 +1779,242 @@ function CloseConfirmModal({
   );
 }
 
+// Props for slot acceptance modal
+interface AcceptanceModalProps {
+  client: Client;
+  isOpen: boolean;
+  onConfirm: (slotId: string, clinician: string) => void;
+  onSkip: () => void;
+  onCancel: () => void;
+  isLoading: boolean;
+}
+
+// Modal for selecting which offered slot the client accepted
+function AcceptanceModal({
+  client,
+  isOpen,
+  onConfirm,
+  onSkip,
+  onCancel,
+  isLoading,
+}: AcceptanceModalProps) {
+  const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
+  const [selectedClinician, setSelectedClinician] = useState<string>("");
+
+  if (!isOpen) return null;
+
+  // Parse offered slots
+  let offeredSlots: OfferedSlot[] = [];
+  if (client.offeredAvailability) {
+    try {
+      offeredSlots = JSON.parse(client.offeredAvailability);
+    } catch {
+      // Invalid JSON
+    }
+  }
+
+  // Get unique slots (dedupe by slotId, keeping all clinicians)
+  const uniqueSlots = offeredSlots.reduce((acc, slot) => {
+    const existing = acc.find((s) => s.slotId === slot.slotId);
+    if (existing) {
+      // Merge clinicians
+      slot.clinicians.forEach((c) => {
+        if (!existing.clinicians.includes(c)) {
+          existing.clinicians.push(c);
+        }
+      });
+    } else {
+      acc.push({ ...slot, clinicians: [...slot.clinicians] });
+    }
+    return acc;
+  }, [] as OfferedSlot[]);
+
+  const selectedSlot = uniqueSlots.find((s) => s.slotId === selectedSlotId);
+
+  const handleConfirm = () => {
+    if (selectedSlotId && selectedClinician) {
+      onConfirm(selectedSlotId, selectedClinician);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto">
+      <div className="fixed inset-0 bg-black bg-opacity-50" onClick={onCancel} />
+      <div className="flex min-h-full items-center justify-center p-4">
+        <div
+          className="relative bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[80vh] flex flex-col"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="p-6 border-b">
+            <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
+              <Calendar className="w-6 h-6 text-green-600" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 text-center mb-2">
+              Client Replied
+            </h3>
+            <p className="text-sm text-gray-600 text-center">
+              Did {client.firstName} accept one of the offered time slots?
+            </p>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 overflow-y-auto p-6">
+            {uniqueSlots.length === 0 ? (
+              <div className="text-center py-4 text-gray-500">
+                <Calendar className="w-8 h-8 mx-auto text-gray-300 mb-2" />
+                <p className="text-sm">No availability was offered to this client.</p>
+                <p className="text-xs text-gray-400 mt-1">
+                  You can still move them to scheduling without booking a slot.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {uniqueSlots.map((slot) => (
+                  <label
+                    key={slot.slotId}
+                    className={`block p-4 border rounded-lg cursor-pointer transition-all ${
+                      selectedSlotId === slot.slotId
+                        ? "border-green-500 bg-green-50 ring-2 ring-green-200"
+                        : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <input
+                        type="radio"
+                        name="slot"
+                        value={slot.slotId}
+                        checked={selectedSlotId === slot.slotId}
+                        onChange={() => {
+                          setSelectedSlotId(slot.slotId);
+                          // Auto-select if only one clinician
+                          if (slot.clinicians.length === 1) {
+                            setSelectedClinician(slot.clinicians[0]);
+                          } else {
+                            setSelectedClinician("");
+                          }
+                        }}
+                        className="mt-1 text-green-600 focus:ring-green-500"
+                      />
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-900">
+                          {slot.day} at {slot.time}
+                        </div>
+                        <div className="text-sm text-gray-500">
+                          {slot.clinicians.join(", ")}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Clinician selection if multiple */}
+                    {selectedSlotId === slot.slotId && slot.clinicians.length > 1 && (
+                      <div className="mt-3 pl-6">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Select clinician:
+                        </label>
+                        <select
+                          value={selectedClinician}
+                          onChange={(e) => setSelectedClinician(e.target.value)}
+                          className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                        >
+                          <option value="">Choose a clinician...</option>
+                          {slot.clinicians.map((clinician) => (
+                            <option key={clinician} value={clinician}>
+                              {clinician}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </label>
+                ))}
+
+                {/* No booking option */}
+                <label
+                  className={`block p-4 border rounded-lg cursor-pointer transition-all ${
+                    selectedSlotId === "none"
+                      ? "border-gray-500 bg-gray-50 ring-2 ring-gray-200"
+                      : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="radio"
+                      name="slot"
+                      value="none"
+                      checked={selectedSlotId === "none"}
+                      onChange={() => {
+                        setSelectedSlotId("none");
+                        setSelectedClinician("");
+                      }}
+                      className="text-gray-600 focus:ring-gray-500"
+                    />
+                    <div>
+                      <div className="font-medium text-gray-700">
+                        No slot accepted
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        Move to scheduling without booking a specific slot
+                      </div>
+                    </div>
+                  </div>
+                </label>
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="p-6 border-t bg-gray-50">
+            <div className="flex gap-3">
+              <button
+                onClick={onCancel}
+                disabled={isLoading}
+                className="flex-1 px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              {selectedSlotId === "none" || uniqueSlots.length === 0 ? (
+                <button
+                  onClick={onSkip}
+                  disabled={isLoading}
+                  className="flex-1 px-4 py-2 text-white bg-gray-600 rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    "Move to Scheduling"
+                  )}
+                </button>
+              ) : (
+                <button
+                  onClick={handleConfirm}
+                  disabled={isLoading || !selectedSlotId || (selectedSlot && selectedSlot.clinicians.length > 1 && !selectedClinician)}
+                  className="flex-1 px-4 py-2 text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Booking...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="w-4 h-4" />
+                      Book Slot
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Main Outreach Page Component
 export default function OutreachPage() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -1238,8 +2038,12 @@ export default function OutreachPage() {
   } = useClosedClients("outreach");
   const [previewClientId, setPreviewClientId] = useState<string | null>(null);
 
+  // Acceptance modal state
+  const [acceptanceClient, setAcceptanceClient] = useState<Client | null>(null);
+
   // Update client hook
   const updateClient = useUpdateClient();
+  const createBookedSlot = useCreateBookedSlot();
   const { addToast } = useToast();
 
   // Filter for outreach workflow statuses
@@ -1283,12 +2087,90 @@ export default function OutreachPage() {
     refetch();
   };
 
-  const handleMoveToScheduling = async () => {
+  // Opens the acceptance modal
+  const handleMoveToScheduling = () => {
     if (!selectedClient) return;
+    setAcceptanceClient(selectedClient);
+  };
+
+  // Handle slot acceptance (books a slot and moves to scheduling)
+  const handleAcceptSlot = async (slotId: string, clinician: string) => {
+    if (!acceptanceClient) return;
+
+    // Find the slot details from offered availability
+    let offeredSlots: OfferedSlot[] = [];
+    if (acceptanceClient.offeredAvailability) {
+      try {
+        offeredSlots = JSON.parse(acceptanceClient.offeredAvailability);
+      } catch {
+        // Invalid JSON
+      }
+    }
+
+    const slot = offeredSlots.find((s) => s.slotId === slotId);
+    if (!slot) {
+      addToast({
+        type: "error",
+        title: "Slot not found",
+        message: "Could not find the selected slot details.",
+      });
+      return;
+    }
+
+    try {
+      // Create the booked slot record
+      await createBookedSlot.mutateAsync({
+        slotId: slot.slotId,
+        day: slot.day,
+        time: slot.time,
+        clinician: clinician,
+        clientId: acceptanceClient.id,
+      });
+
+      // Create accepted slot data
+      const acceptedSlot: AcceptedSlot = {
+        slotId: slot.slotId,
+        day: slot.day,
+        time: slot.time,
+        clinician: clinician,
+        acceptedAt: new Date().toISOString(),
+      };
+
+      // Update client with accepted slot and move to scheduling
+      await updateClient.mutateAsync({
+        id: acceptanceClient.id,
+        data: {
+          status: "ready_to_schedule",
+          acceptedSlot: JSON.stringify(acceptedSlot),
+          assignedClinician: clinician,
+        },
+      });
+
+      addToast({
+        type: "success",
+        title: "Slot booked",
+        message: `${acceptanceClient.firstName} ${acceptanceClient.lastName} is booked for ${slot.day} at ${slot.time} with ${clinician}.`,
+      });
+
+      setAcceptanceClient(null);
+      setSelectedClientId(null);
+      refetch();
+    } catch (error) {
+      addToast({
+        type: "error",
+        title: "Failed to book slot",
+        message: error instanceof Error ? error.message : "Failed to book slot",
+      });
+    }
+  };
+
+  // Handle moving to scheduling without booking a slot
+  const handleSkipSlotBooking = async () => {
+    if (!acceptanceClient) return;
 
     try {
       await updateClient.mutateAsync({
-        id: selectedClient.id,
+        id: acceptanceClient.id,
         data: {
           status: "ready_to_schedule",
         },
@@ -1297,9 +2179,10 @@ export default function OutreachPage() {
       addToast({
         type: "success",
         title: "Moved to scheduling",
-        message: `${selectedClient.firstName} ${selectedClient.lastName} is now ready to schedule.`,
+        message: `${acceptanceClient.firstName} ${acceptanceClient.lastName} is now ready to schedule.`,
       });
 
+      setAcceptanceClient(null);
       setSelectedClientId(null);
       refetch();
     } catch (error) {
@@ -1522,6 +2405,18 @@ export default function OutreachPage() {
           onConfirm={handleConfirmClose}
           onCancel={() => setCloseConfirmClient(null)}
           isLoading={updateClient.isPending}
+        />
+      )}
+
+      {/* Acceptance Modal (for Client Replied) */}
+      {acceptanceClient && (
+        <AcceptanceModal
+          client={acceptanceClient}
+          isOpen={!!acceptanceClient}
+          onConfirm={handleAcceptSlot}
+          onSkip={handleSkipSlotBooking}
+          onCancel={() => setAcceptanceClient(null)}
+          isLoading={updateClient.isPending || createBookedSlot.isPending}
         />
       )}
 

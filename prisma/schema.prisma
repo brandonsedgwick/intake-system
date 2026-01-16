@@ -301,6 +301,10 @@ model Client {
   referralEmailSentAt  String?
   referralClinicNames  String? // Comma-separated list of clinic names
 
+  // Availability Tracking
+  offeredAvailability String? // JSON array of OfferedSlot objects
+  acceptedSlot        String? // JSON object of AcceptedSlot (single slot client accepted)
+
   // Closure
   closedDate         String?
   closedReason       String?
@@ -312,6 +316,24 @@ model Client {
   @@index([createdAt])
   @@index([closedFromWorkflow])
   @@map("clients")
+}
+
+// ============================================
+// Booked Slots - Track which availability slots have been accepted by clients
+// ============================================
+model BookedSlot {
+  id        String   @id @default(uuid())
+  slotId    String // Matches sheet slot id (day-time normalized)
+  day       String
+  time      String
+  clinician String // Specific clinician who was booked
+  clientId  String // References Client
+  bookedAt  String // ISO timestamp when client accepted
+  createdAt DateTime @default(now())
+
+  @@index([slotId])
+  @@index([clientId])
+  @@map("booked_slots")
 }
 
 // ============================================
