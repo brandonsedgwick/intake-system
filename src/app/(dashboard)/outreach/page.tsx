@@ -1452,6 +1452,23 @@ function ReadingPane({
 
   const banner = getWorkflowBanner(client);
 
+  // Build HTML availability block from selected slots
+  const buildAvailabilityBlock = (slots: SelectedSlotInfo[]): string => {
+    if (slots.length === 0) return "";
+
+    const slotLines = slots.map((slot) => {
+      const clinicianList = slot.clinicians.join(" or ");
+      return `<li style="margin-bottom: 8px;">${slot.day} at ${slot.time} with ${clinicianList}</li>`;
+    });
+
+    return `<hr style="border: none; border-top: 2px solid #d1d5db; margin: 24px 0;">
+<p style="color: #374151; font-weight: 600; margin-bottom: 12px;">Available Appointment Times:</p>
+<ul style="margin: 0; padding-left: 20px; color: #4b5563;">
+${slotLines.join("\n")}
+</ul>
+<p style="color: #6b7280; margin-top: 16px; font-size: 14px;">Please let me know which time works best for you, and I'll get you scheduled right away.</p>`;
+  };
+
   const handlePreviewEmail = async () => {
     if (!selectedTemplate) return;
 
@@ -1471,11 +1488,15 @@ function ReadingPane({
         },
       });
 
+      // Build the full body with availability slots appended
+      const availabilityBlock = buildAvailabilityBlock(pendingOfferedSlots);
+      const fullBody = result.body + availabilityBlock;
+
       setEditedTo(client.email);
       setEditedCc("");
       setEditedBcc("");
       setEditedSubject(result.subject);
-      setEditedBody(result.body);
+      setEditedBody(fullBody);
       setAttachments([]);
       setSendSuccess(false);
       setIsEditing(false);
@@ -1750,19 +1771,19 @@ function ReadingPane({
           Find Availability
         </button>
 
-        {/* Send Email Button */}
+        {/* Process Outreach Button */}
         {selectedTemplate && (
           <button
             onClick={handlePreviewEmail}
             disabled={previewMutation.isPending}
-            className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50"
           >
             {previewMutation.isPending ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               <Send className="w-4 h-4" />
             )}
-            Send Email
+            Process Outreach
           </button>
         )}
 
@@ -2080,7 +2101,7 @@ function ReadingPane({
             <div className="flex items-center justify-between p-6 border-b">
               <div className="flex items-center gap-3">
                 <h2 className="text-xl font-semibold text-gray-900">
-                  {sendSuccess ? "Email Sent!" : isEditing ? "Edit Email" : "Preview Email"}
+                  {sendSuccess ? "Email Sent!" : isEditing ? "Edit Email" : "Process Outreach"}
                 </h2>
                 {!sendSuccess && (
                   <button
@@ -2203,6 +2224,33 @@ function ReadingPane({
                       />
                     )}
                   </div>
+
+                  {/* Availability Summary */}
+                  {pendingOfferedSlots.length > 0 && (
+                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Calendar className="w-4 h-4 text-purple-600" />
+                        <label className="text-sm font-medium text-purple-800">
+                          Offering {pendingOfferedSlots.length} Appointment Slot{pendingOfferedSlots.length !== 1 ? "s" : ""}
+                        </label>
+                      </div>
+                      <div className="space-y-2">
+                        {pendingOfferedSlots.map((slot, index) => (
+                          <div
+                            key={slot.slotId}
+                            className="flex items-center gap-2 text-sm text-purple-700"
+                          >
+                            <span className="w-5 h-5 bg-purple-200 rounded-full flex items-center justify-center text-xs font-medium">
+                              {index + 1}
+                            </span>
+                            <span>
+                              {slot.day} at {slot.time} with {slot.clinicians.join(" or ")}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Attachments */}
                   <div>
