@@ -11,7 +11,24 @@ import {
   useCreateBookedSlot,
   matchesInsurance,
 } from "@/hooks/use-availability-sheets";
-import { Client, EmailTemplate, ClientStatus, SheetAvailabilitySlot, OfferedSlot, AcceptedSlot } from "@/types/client";
+import { Client, EmailTemplate, ClientStatus, SheetAvailabilitySlot, OfferedSlot, AcceptedSlot, BookedSlot } from "@/types/client";
+import {
+  computeClinicianStats,
+  sortClinicianStats,
+  ClinicianStats,
+  getDayCounts,
+  getInsuranceMatchCount,
+  getTotalAvailableCount,
+  TIME_RANGES,
+  TimeRange,
+} from "@/lib/availability-analytics";
+import {
+  selectRandomSlots,
+  selectRandomTimesForClinician,
+  selectRandomSlotsForDays,
+  SelectedSlotInfo,
+  filterSlots,
+} from "@/lib/availability-random";
 import { ClosedCasesSection } from "@/components/clients/closed-cases-section";
 import { ClientPreviewModal } from "@/components/clients/client-preview-modal";
 import { RichTextEditor } from "@/components/templates/rich-text-editor";
@@ -47,6 +64,10 @@ import {
   MailCheck,
   Shield,
   RefreshCw,
+  Shuffle,
+  Sparkles,
+  Filter,
+  ChevronRight,
 } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
 
@@ -325,15 +346,7 @@ function Dropdown({ label, icon, selectedLabel, isOpen, onToggle, children }: Dr
   );
 }
 
-// Selected slot tracking for availability modal
-interface SelectedSlotInfo {
-  slotId: string;
-  day: string;
-  time: string;
-  clinicians: string[]; // Selected clinicians for this slot
-}
-
-// Availability Modal Component - Uses real data from Google Sheets
+// Availability Modal Component - Uses real data from Google Sheets with Smart Select
 interface AvailabilityModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -345,9 +358,32 @@ function AvailabilityModal({ isOpen, onClose, onInsertAvailability, client }: Av
   const { data: slots, isLoading: slotsLoading, refetch, isFetching } = useAvailabilityFromSheets();
   const { data: bookedSlots } = useBookedSlots();
 
+  // Tab state
+  const [activeTab, setActiveTab] = useState<"smart" | "browse">("smart");
+
+  // Selection state
+  const [selectedSlots, setSelectedSlots] = useState<SelectedSlotInfo[]>([]);
+
+  // Smart Select filters
+  const [selectedClinicians, setSelectedClinicians] = useState<Set<string>>(new Set());
+  const [selectedDays, setSelectedDays] = useState<Set<string>>(new Set());
+  const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRange | "all">("all");
+  const [selectedSpecificTime, setSelectedSpecificTime] = useState<string>(""); // Specific time like "9:00 AM"
+  const [onlyInsuranceMatch, setOnlyInsuranceMatch] = useState(true);
+  const [excludeOffered, setExcludeOffered] = useState(false);
+
+  // Random picker state
+  const [randomMode, setRandomMode] = useState<"full" | "by-clinician" | "by-day">("full");
+  const [randomCount, setRandomCount] = useState(3);
+  const [randomClinician, setRandomClinician] = useState<string>("");
+  const [randomDays, setRandomDays] = useState<Set<string>>(new Set());
+
+  // Clinician sorting
+  const [clinicianSort, setClinicianSort] = useState<"availability" | "alpha" | "insurance">("availability");
+
+  // Browse tab filters
   const [searchQuery, setSearchQuery] = useState("");
   const [insuranceFilter, setInsuranceFilter] = useState<"all" | "matching">("matching");
-  const [selectedSlots, setSelectedSlots] = useState<SelectedSlotInfo[]>([]);
 
   // Parse client's previously offered slots
   const previouslyOffered = useMemo(() => {
@@ -360,31 +396,70 @@ function AvailabilityModal({ isOpen, onClose, onInsertAvailability, client }: Av
     }
   }, [client.offeredAvailability]);
 
-  // Create set of booked slot+clinician combinations
-  const bookedSet = useMemo(() => {
-    const set = new Set<string>();
-    bookedSlots?.forEach((b) => {
-      set.add(`${b.slotId}-${b.clinician}`);
-    });
-    return set;
-  }, [bookedSlots]);
+  // Computed statistics
+  const clinicianStats = useMemo(() => {
+    if (!slots || !bookedSlots) return [];
+    return sortClinicianStats(
+      computeClinicianStats(slots, bookedSlots, client.requestedClinician, client.insuranceProvider),
+      clinicianSort
+    );
+  }, [slots, bookedSlots, client.requestedClinician, client.insuranceProvider, clinicianSort]);
 
-  // Get unique insurance values
-  const uniqueInsurances = useMemo(() => {
+  const dayCounts = useMemo(() => {
+    if (!slots || !bookedSlots) return {};
+    return getDayCounts(slots, bookedSlots);
+  }, [slots, bookedSlots]);
+
+  const insuranceMatchCount = useMemo(() => {
+    if (!slots || !bookedSlots) return 0;
+    return getInsuranceMatchCount(slots, bookedSlots, client.insuranceProvider);
+  }, [slots, bookedSlots, client.insuranceProvider]);
+
+  const totalAvailableCount = useMemo(() => {
+    if (!slots || !bookedSlots) return 0;
+    return getTotalAvailableCount(slots, bookedSlots);
+  }, [slots, bookedSlots]);
+
+  // Available days from data
+  const availableDays = useMemo(() => {
+    const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+    return days.filter(day => dayCounts[day] > 0);
+  }, [dayCounts]);
+
+  // Unique times from availability data (sorted)
+  const uniqueTimes = useMemo(() => {
     if (!slots) return [];
-    const insurances = new Set<string>();
-    slots.forEach((slot) => {
-      if (slot.insurance) insurances.add(slot.insurance);
+    const timeSet = new Set<string>();
+    slots.forEach(slot => timeSet.add(slot.time));
+    // Sort times chronologically
+    return Array.from(timeSet).sort((a, b) => {
+      const parseTime = (t: string) => {
+        const match = t.match(/(\d+):?(\d*)\s*(AM|PM)?/i);
+        if (!match) return 0;
+        let hour = parseInt(match[1], 10);
+        const isPM = match[3]?.toUpperCase() === "PM";
+        if (isPM && hour !== 12) hour += 12;
+        else if (!isPM && hour === 12) hour = 0;
+        return hour;
+      };
+      return parseTime(a) - parseTime(b);
     });
-    return Array.from(insurances).sort();
   }, [slots]);
 
-  // Filter slots
+  // Check if requested clinician has any availability
+  const requestedClinicianHasAvailability = useMemo(() => {
+    if (!client.requestedClinician || !clinicianStats.length) return true;
+    const stat = clinicianStats.find(
+      s => s.name.toLowerCase() === client.requestedClinician?.toLowerCase()
+    );
+    return stat ? stat.availableSlots > 0 : false;
+  }, [client.requestedClinician, clinicianStats]);
+
+  // Filter slots for Browse tab
   const filteredSlots = useMemo(() => {
     if (!slots) return [];
 
     return slots.filter((slot) => {
-      // Search filter
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
         const matchesSearch =
@@ -395,7 +470,6 @@ function AvailabilityModal({ isOpen, onClose, onInsertAvailability, client }: Av
         if (!matchesSearch) return false;
       }
 
-      // Insurance filter - show matching only
       if (insuranceFilter === "matching" && client.insuranceProvider) {
         if (!matchesInsurance(slot, client.insuranceProvider)) return false;
       }
@@ -404,70 +478,138 @@ function AvailabilityModal({ isOpen, onClose, onInsertAvailability, client }: Av
     });
   }, [slots, searchQuery, insuranceFilter, client.insuranceProvider]);
 
-  // Check if a clinician in a slot is booked
-  const isClinicianBooked = (slotId: string, clinician: string) => {
-    return bookedSet.has(`${slotId}-${clinician}`);
-  };
+  // Filtered slots for Smart Select matching slots display
+  const matchingSlots = useMemo(() => {
+    if (!slots || !bookedSlots) return [];
 
-  // Check if slot is fully booked
-  const isFullyBooked = (slot: SheetAvailabilitySlot) => {
-    return slot.clinicians.every((c) => isClinicianBooked(slot.id, c));
-  };
+    const hasFilters = selectedClinicians.size > 0 || selectedDays.size > 0 || selectedTimeRange !== "all" || selectedSpecificTime !== "";
+    if (!hasFilters) return [];
 
-  // Toggle clinician selection within a slot
-  const handleToggleClinician = (slot: SheetAvailabilitySlot, clinician: string) => {
-    setSelectedSlots((prev) => {
-      const existingSlotIndex = prev.findIndex((s) => s.slotId === slot.id);
+    return filterSlots(slots, bookedSlots, {
+      clinicians: selectedClinicians.size > 0 ? Array.from(selectedClinicians) : undefined,
+      days: selectedDays.size > 0 ? Array.from(selectedDays) : undefined,
+      timeRange: selectedTimeRange !== "all" ? selectedTimeRange : undefined,
+      specificTime: selectedSpecificTime || undefined,
+      clientInsurance: client.insuranceProvider,
+      onlyInsuranceMatch,
+      excludeOffered,
+      previouslyOffered,
+    });
+  }, [slots, bookedSlots, selectedClinicians, selectedDays, selectedTimeRange, selectedSpecificTime, client.insuranceProvider, onlyInsuranceMatch, excludeOffered, previouslyOffered]);
 
-      if (existingSlotIndex === -1) {
-        // Add new slot with this clinician
-        return [
-          ...prev,
-          {
-            slotId: slot.id,
-            day: slot.day,
-            time: slot.time,
-            clinicians: [clinician],
-          },
-        ];
-      }
-
-      const existingSlot = prev[existingSlotIndex];
-      const clinicianIndex = existingSlot.clinicians.indexOf(clinician);
-
-      if (clinicianIndex === -1) {
-        // Add clinician to existing slot
-        const updatedSlot = {
-          ...existingSlot,
-          clinicians: [...existingSlot.clinicians, clinician],
-        };
-        return [...prev.slice(0, existingSlotIndex), updatedSlot, ...prev.slice(existingSlotIndex + 1)];
+  // Toggle clinician filter
+  const toggleClinicianFilter = (clinician: string) => {
+    setSelectedClinicians(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(clinician)) {
+        newSet.delete(clinician);
       } else {
-        // Remove clinician from slot
-        const newClinicians = existingSlot.clinicians.filter((c) => c !== clinician);
-        if (newClinicians.length === 0) {
-          // Remove the slot entirely
-          return prev.filter((s) => s.slotId !== slot.id);
-        }
-        const updatedSlot = { ...existingSlot, clinicians: newClinicians };
-        return [...prev.slice(0, existingSlotIndex), updatedSlot, ...prev.slice(existingSlotIndex + 1)];
+        newSet.add(clinician);
       }
+      return newSet;
     });
   };
 
-  // Check if a clinician is selected
-  const isClinicianSelected = (slotId: string, clinician: string) => {
-    const slot = selectedSlots.find((s) => s.slotId === slotId);
-    return slot?.clinicians.includes(clinician) || false;
+  // Toggle day filter
+  const toggleDayFilter = (day: string) => {
+    setSelectedDays(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(day)) {
+        newSet.delete(day);
+      } else {
+        newSet.add(day);
+      }
+      return newSet;
+    });
+  };
+
+  // Toggle random day selection
+  const toggleRandomDay = (day: string) => {
+    setRandomDays(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(day)) {
+        newSet.delete(day);
+      } else {
+        newSet.add(day);
+      }
+      return newSet;
+    });
+  };
+
+  // Generate random selection
+  const handleGenerateRandom = () => {
+    if (!slots || !bookedSlots) return;
+
+    let result: SelectedSlotInfo[] = [];
+
+    switch (randomMode) {
+      case "full":
+        result = selectRandomSlots(slots, bookedSlots, {
+          count: randomCount,
+          mode: "full",
+          clientInsurance: client.insuranceProvider,
+          onlyInsuranceMatch,
+          excludeOffered,
+          previouslyOffered,
+          timeRange: selectedTimeRange !== "all" ? selectedTimeRange : undefined,
+        });
+        break;
+      case "by-clinician":
+        if (!randomClinician) return;
+        result = selectRandomTimesForClinician(slots, bookedSlots, randomClinician, randomCount, {
+          clientInsurance: client.insuranceProvider,
+          onlyInsuranceMatch,
+          excludeOffered,
+          previouslyOffered,
+          timeRange: selectedTimeRange !== "all" ? selectedTimeRange : undefined,
+        });
+        break;
+      case "by-day":
+        if (randomDays.size === 0) return;
+        result = selectRandomSlotsForDays(slots, bookedSlots, Array.from(randomDays), randomCount, {
+          clientInsurance: client.insuranceProvider,
+          onlyInsuranceMatch,
+          excludeOffered,
+          previouslyOffered,
+          timeRange: selectedTimeRange !== "all" ? selectedTimeRange : undefined,
+        });
+        break;
+    }
+
+    setSelectedSlots(result);
+  };
+
+  // Add a slot to selection
+  const addSlotToSelection = (slot: SheetAvailabilitySlot, clinician: string) => {
+    setSelectedSlots(prev => {
+      const existingIndex = prev.findIndex(s => s.slotId === slot.id);
+      if (existingIndex === -1) {
+        return [...prev, { slotId: slot.id, day: slot.day, time: slot.time, clinicians: [clinician] }];
+      }
+      const existing = prev[existingIndex];
+      if (existing.clinicians.includes(clinician)) {
+        return prev;
+      }
+      const updated = { ...existing, clinicians: [...existing.clinicians, clinician] };
+      return [...prev.slice(0, existingIndex), updated, ...prev.slice(existingIndex + 1)];
+    });
+  };
+
+  // Remove a slot from selection
+  const removeSlotFromSelection = (slotId: string) => {
+    setSelectedSlots(prev => prev.filter(s => s.slotId !== slotId));
+  };
+
+  // Clear all selections
+  const clearAllSelections = () => {
+    setSelectedSlots([]);
   };
 
   // Build availability text for email
   const handleInsert = () => {
     if (selectedSlots.length === 0) return;
 
-    // Build formatted availability text
     const lines: string[] = [];
-
     selectedSlots.forEach((slot) => {
       const clinicianList = slot.clinicians.join(" or ");
       lines.push(`• ${slot.day} at ${slot.time} with ${clinicianList}`);
@@ -490,230 +632,747 @@ function AvailabilityModal({ isOpen, onClose, onInsertAvailability, client }: Av
     onClose();
     setSearchQuery("");
     setSelectedSlots([]);
+    setSelectedClinicians(new Set());
+    setSelectedDays(new Set());
+    setSelectedTimeRange("all");
+    setSelectedSpecificTime("");
+    setActiveTab("smart");
   };
 
-  // Count total selected clinicians
-  const totalSelectedClinicians = selectedSlots.reduce((sum, s) => sum + s.clinicians.length, 0);
+  // Check if slot was previously offered
+  const wasOffered = (slotId: string) => previouslyOffered.has(slotId);
 
   if (!isOpen) return null;
 
+  // Handle clicking on requested clinician
+  const handleRequestedClinicianClick = () => {
+    if (client.requestedClinician) {
+      setSelectedClinicians(new Set([client.requestedClinician]));
+      setActiveTab("smart");
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/50" onClick={handleClose} />
 
-      {/* Modal */}
-      <div className="relative bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col">
+      {/* Modal - Extra large (50% wider) */}
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-[1800px] h-[95vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
-              <Calendar className="w-5 h-5 text-purple-600" />
-            </div>
+        <div className="bg-gradient-to-r from-purple-600 to-purple-700 px-8 py-5 rounded-t-2xl">
+          <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-semibold text-gray-900">Find Availability</h2>
-              <p className="text-sm text-gray-500">
-                Select time slots to offer to {client.firstName}
+              <h2 className="text-2xl font-bold text-white">Find Availability</h2>
+              <div className="flex items-center gap-3 mt-2">
+                <span className="text-purple-200">
+                  Client: {client.firstName} {client.lastName}
+                </span>
                 {client.insuranceProvider && (
-                  <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-700">
-                    <Shield className="w-3 h-3 mr-1" />
+                  <span className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-purple-500/30 text-purple-100">
+                    <Shield className="w-4 h-4 mr-1.5" />
                     {client.insuranceProvider}
                   </span>
                 )}
-              </p>
+                {client.requestedClinician && (
+                  <button
+                    onClick={handleRequestedClinicianClick}
+                    className={`inline-flex items-center px-3 py-1 rounded-full text-sm transition-colors cursor-pointer ${
+                      requestedClinicianHasAvailability
+                        ? "bg-amber-500/40 text-amber-100 hover:bg-amber-500/60"
+                        : "bg-red-500/40 text-red-100 hover:bg-red-500/60"
+                    }`}
+                    title={requestedClinicianHasAvailability
+                      ? "Click to filter to this clinician"
+                      : "This clinician has no availability - click to see their profile"}
+                  >
+                    <User className="w-4 h-4 mr-1.5" />
+                    Requested: {client.requestedClinician}
+                    {!requestedClinicianHasAvailability && (
+                      <AlertCircle className="w-4 h-4 ml-1.5" />
+                    )}
+                    {requestedClinicianHasAvailability && (
+                      <ChevronRight className="w-4 h-4 ml-1" />
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => refetch()}
-              disabled={isFetching}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-              title="Refresh availability"
-            >
-              <RefreshCw className={`w-5 h-5 ${isFetching ? "animate-spin" : ""}`} />
-            </button>
-            <button
-              onClick={handleClose}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => refetch()}
+                disabled={isFetching}
+                className="p-2.5 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                title="Refresh availability"
+              >
+                <RefreshCw className={`w-5 h-5 ${isFetching ? "animate-spin" : ""}`} />
+              </button>
+              <button
+                onClick={handleClose}
+                className="p-2.5 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="px-6 py-3 border-b bg-gray-50 flex items-center gap-4">
-          {/* Search */}
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search by day, time, clinician..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
-            />
-          </div>
-
-          {/* Insurance filter toggle */}
-          {client.insuranceProvider && (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setInsuranceFilter(insuranceFilter === "all" ? "matching" : "all")}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-                  insuranceFilter === "matching"
-                    ? "bg-blue-100 text-blue-700 border border-blue-200"
-                    : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
-                }`}
-              >
-                <Shield className="w-4 h-4" />
-                {insuranceFilter === "matching" ? "Insurance Match" : "Show All"}
-              </button>
+        {/* Warning Banner - Requested clinician has no availability */}
+        {client.requestedClinician && !requestedClinicianHasAvailability && !slotsLoading && (
+          <div className="bg-amber-50 border-b border-amber-200 px-8 py-3">
+            <div className="flex items-center gap-3 text-amber-800">
+              <AlertCircle className="w-5 h-5 flex-shrink-0" />
+              <p className="text-sm">
+                <span className="font-semibold">{client.requestedClinician}</span> (requested clinician) currently has no available slots.
+                Consider offering alternative clinicians or checking back later.
+              </p>
             </div>
-          )}
+          </div>
+        )}
+
+        {/* Tab Navigation */}
+        <div className="border-b px-8">
+          <div className="flex gap-8">
+            <button
+              onClick={() => setActiveTab("smart")}
+              className={`py-4 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === "smart"
+                  ? "border-purple-500 text-purple-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              <Sparkles className="w-4 h-4 inline-block mr-2" />
+              Smart Select
+            </button>
+            <button
+              onClick={() => setActiveTab("browse")}
+              className={`py-4 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === "browse"
+                  ? "border-purple-500 text-purple-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              <Search className="w-4 h-4 inline-block mr-2" />
+              Browse All
+            </button>
+          </div>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-hidden">
           {slotsLoading ? (
-            <div className="flex flex-col items-center justify-center py-12">
-              <Loader2 className="w-8 h-8 animate-spin text-purple-600 mb-4" />
-              <p className="text-gray-500">Loading availability...</p>
+            <div className="flex flex-col items-center justify-center h-full">
+              <Loader2 className="w-10 h-10 animate-spin text-purple-600 mb-4" />
+              <p className="text-gray-500 text-lg">Loading availability...</p>
             </div>
           ) : !slots || slots.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <Calendar className="w-12 h-12 text-gray-300 mb-4" />
-              <p className="text-gray-900 font-medium mb-2">No availability found</p>
-              <p className="text-gray-500 text-sm">
-                Check the availability spreadsheet for data
-              </p>
+            <div className="flex flex-col items-center justify-center h-full text-center">
+              <Calendar className="w-16 h-16 text-gray-300 mb-4" />
+              <p className="text-gray-900 font-medium text-lg mb-2">No availability found</p>
+              <p className="text-gray-500">Check the availability spreadsheet for data</p>
             </div>
-          ) : filteredSlots.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <Search className="w-12 h-12 text-gray-300 mb-4" />
-              <p className="text-gray-900 font-medium mb-2">No matching slots</p>
-              <p className="text-gray-500 text-sm">
-                Try adjusting your search or{" "}
-                <button
-                  onClick={() => setInsuranceFilter("all")}
-                  className="text-purple-600 hover:underline"
-                >
-                  show all insurance types
-                </button>
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {filteredSlots.map((slot) => {
-                const fullyBooked = isFullyBooked(slot);
-                const wasOffered = previouslyOffered.has(slot.id);
-                const insuranceMatches = matchesInsurance(slot, client.insuranceProvider);
-
-                return (
-                  <div
-                    key={slot.id}
-                    className={`rounded-lg border p-4 transition-colors ${
-                      fullyBooked
-                        ? "bg-gray-50 border-gray-200 opacity-60"
-                        : wasOffered
-                        ? "border-amber-300 bg-amber-50"
-                        : "border-gray-200 hover:border-gray-300"
-                    }`}
-                  >
-                    {/* Slot header */}
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-3">
-                        <div className={`font-medium ${fullyBooked ? "text-gray-400 line-through" : "text-gray-900"}`}>
-                          {slot.day} at {slot.time}
-                        </div>
-                        {wasOffered && !fullyBooked && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-200 text-amber-800">
-                            Previously offered
-                          </span>
-                        )}
-                        {fullyBooked && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">
-                            Fully booked
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {insuranceMatches && (
-                          <span className="flex items-center gap-1 text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded-full">
-                            <CheckCircle className="w-3 h-3" />
-                            Insurance
-                          </span>
-                        )}
-                        {slot.insurance && (
-                          <span className="text-xs text-gray-500">{slot.insurance}</span>
-                        )}
-                      </div>
+          ) : activeTab === "smart" ? (
+            <div className="h-full flex">
+              {/* Left Column - Selection Tools */}
+              <div className="w-1/2 border-r overflow-y-auto p-8">
+                {/* Quick Stats */}
+                <div className="flex gap-4 mb-8">
+                  {client.insuranceProvider && (
+                    <div className="flex items-center gap-2 px-4 py-2 bg-green-50 text-green-700 rounded-lg">
+                      <CheckCircle className="w-5 h-5" />
+                      <span className="font-medium">{insuranceMatchCount} insurance matches</span>
                     </div>
+                  )}
+                  <div className="flex items-center gap-2 px-4 py-2 bg-purple-50 text-purple-700 rounded-lg">
+                    <Clock className="w-5 h-5" />
+                    <span className="font-medium">{totalAvailableCount} total available</span>
+                  </div>
+                </div>
 
-                    {/* Clinician selection */}
-                    <div className="flex flex-wrap gap-2">
-                      {slot.clinicians.map((clinician) => {
-                        const isBooked = isClinicianBooked(slot.id, clinician);
-                        const isSelected = isClinicianSelected(slot.id, clinician);
-
-                        return (
-                          <label
-                            key={clinician}
-                            className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
-                              isBooked
-                                ? "bg-gray-100 border-gray-200 opacity-50 cursor-not-allowed"
-                                : isSelected
-                                ? "bg-purple-100 border-purple-500"
-                                : "bg-white border-gray-200 hover:border-purple-300 hover:bg-purple-50"
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              disabled={isBooked}
-                              onChange={() => handleToggleClinician(slot, clinician)}
-                              className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 disabled:opacity-50"
-                            />
-                            <span className={`text-sm ${isBooked ? "text-gray-400 line-through" : "text-gray-900"}`}>
-                              {clinician}
-                            </span>
-                            {isBooked && (
-                              <span className="text-xs text-red-500">(Booked)</span>
-                            )}
-                          </label>
-                        );
-                      })}
+                {/* By Clinician Section */}
+                <div className="mb-8">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
+                      <User className="w-6 h-6 text-purple-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900 text-lg">By Clinician</h3>
+                      <p className="text-sm text-gray-500">Select specific provider(s)</p>
                     </div>
                   </div>
-                );
-              })}
+
+                  {/* Sort Options */}
+                  <div className="flex items-center gap-3 mb-4 text-sm">
+                    <span className="text-gray-500">Sort:</span>
+                    <button
+                      onClick={() => setClinicianSort("availability")}
+                      className={`px-3 py-1 rounded-lg transition-colors ${
+                        clinicianSort === "availability" ? "bg-purple-100 text-purple-700 font-medium" : "hover:bg-gray-100"
+                      }`}
+                    >
+                      Most Available
+                    </button>
+                    <button
+                      onClick={() => setClinicianSort("alpha")}
+                      className={`px-3 py-1 rounded-lg transition-colors ${
+                        clinicianSort === "alpha" ? "bg-purple-100 text-purple-700 font-medium" : "hover:bg-gray-100"
+                      }`}
+                    >
+                      A-Z
+                    </button>
+                    <button
+                      onClick={() => setClinicianSort("insurance")}
+                      className={`px-3 py-1 rounded-lg transition-colors ${
+                        clinicianSort === "insurance" ? "bg-purple-100 text-purple-700 font-medium" : "hover:bg-gray-100"
+                      }`}
+                    >
+                      Insurance Match
+                    </button>
+                  </div>
+
+                  {/* Clinician Chips */}
+                  <div className="flex flex-wrap gap-2">
+                    {clinicianStats.map((stat) => (
+                      <button
+                        key={stat.name}
+                        onClick={() => toggleClinicianFilter(stat.name)}
+                        className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                          selectedClinicians.has(stat.name)
+                            ? "bg-purple-600 text-white shadow-md"
+                            : stat.isRequestedClinician
+                            ? "bg-amber-100 text-amber-800 hover:bg-amber-200 ring-2 ring-amber-400"
+                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                        }`}
+                      >
+                        {stat.name}
+                        <span className={`ml-2 px-1.5 py-0.5 rounded text-xs ${
+                          selectedClinicians.has(stat.name) ? "bg-purple-500" : "bg-gray-200 text-gray-600"
+                        }`}>
+                          {stat.availableSlots}
+                        </span>
+                        {stat.matchesClientInsurance && !selectedClinicians.has(stat.name) && (
+                          <CheckCircle className="w-4 h-4 ml-1 text-green-500" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* By Day Section */}
+                <div className="mb-8">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                      <Calendar className="w-6 h-6 text-blue-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900 text-lg">By Day</h3>
+                      <p className="text-sm text-gray-500">Pick specific day(s)</p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-3">
+                    {availableDays.map((day) => (
+                      <button
+                        key={day}
+                        onClick={() => toggleDayFilter(day)}
+                        className={`inline-flex items-center px-5 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                          selectedDays.has(day)
+                            ? "bg-blue-600 text-white shadow-md"
+                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                        }`}
+                      >
+                        {day}
+                        <span className={`ml-2 px-1.5 py-0.5 rounded text-xs ${
+                          selectedDays.has(day) ? "bg-blue-500" : "bg-gray-200 text-gray-600"
+                        }`}>
+                          {dayCounts[day]}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* By Time Section */}
+                <div className="mb-8">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
+                      <Clock className="w-6 h-6 text-green-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900 text-lg">By Time</h3>
+                      <p className="text-sm text-gray-500">Filter by time of day or specific time</p>
+                    </div>
+                  </div>
+
+                  {/* Time Range Buttons */}
+                  <div className="flex flex-wrap gap-3 mb-4">
+                    <button
+                      onClick={() => { setSelectedTimeRange("all"); setSelectedSpecificTime(""); }}
+                      className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                        selectedTimeRange === "all" && !selectedSpecificTime
+                          ? "bg-green-600 text-white shadow-md"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      }`}
+                    >
+                      All Times
+                    </button>
+                    {(Object.keys(TIME_RANGES) as TimeRange[]).map((range) => (
+                      <button
+                        key={range}
+                        onClick={() => { setSelectedTimeRange(range); setSelectedSpecificTime(""); }}
+                        className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                          selectedTimeRange === range && !selectedSpecificTime
+                            ? "bg-green-600 text-white shadow-md"
+                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                        }`}
+                      >
+                        {TIME_RANGES[range].label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Specific Time Dropdown */}
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-gray-600 font-medium">Or specific time:</span>
+                    <div className="relative">
+                      <select
+                        value={selectedSpecificTime}
+                        onChange={(e) => {
+                          setSelectedSpecificTime(e.target.value);
+                          if (e.target.value) setSelectedTimeRange("all");
+                        }}
+                        className={`appearance-none pl-4 pr-10 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 min-w-[140px] ${
+                          selectedSpecificTime
+                            ? "bg-green-50 border-green-300 text-green-700"
+                            : "bg-white border-gray-300"
+                        }`}
+                      >
+                        <option value="">Any time</option>
+                        {uniqueTimes.map((time) => (
+                          <option key={time} value={time}>
+                            {time}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                    </div>
+                    {selectedSpecificTime && (
+                      <button
+                        onClick={() => setSelectedSpecificTime("")}
+                        className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+                        title="Clear specific time"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Random Picker Section */}
+                <div className="p-6 bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl border border-amber-200">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center">
+                      <Shuffle className="w-6 h-6 text-amber-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900 text-lg">Random Pick</h3>
+                      <p className="text-sm text-gray-500">Auto-select diverse options</p>
+                    </div>
+                  </div>
+
+                  {/* Mode Selection */}
+                  <div className="flex gap-2 mb-4 p-1 bg-white/60 rounded-lg">
+                    <button
+                      onClick={() => setRandomMode("full")}
+                      className={`flex-1 px-3 py-2 text-sm rounded-lg font-medium transition-colors ${
+                        randomMode === "full" ? "bg-amber-500 text-white shadow" : "hover:bg-white/50"
+                      }`}
+                    >
+                      Full Random
+                    </button>
+                    <button
+                      onClick={() => setRandomMode("by-clinician")}
+                      className={`flex-1 px-3 py-2 text-sm rounded-lg font-medium transition-colors ${
+                        randomMode === "by-clinician" ? "bg-amber-500 text-white shadow" : "hover:bg-white/50"
+                      }`}
+                    >
+                      By Clinician
+                    </button>
+                    <button
+                      onClick={() => setRandomMode("by-day")}
+                      className={`flex-1 px-3 py-2 text-sm rounded-lg font-medium transition-colors ${
+                        randomMode === "by-day" ? "bg-amber-500 text-white shadow" : "hover:bg-white/50"
+                      }`}
+                    >
+                      By Day
+                    </button>
+                  </div>
+
+                  {/* Clinician selector for by-clinician mode */}
+                  {randomMode === "by-clinician" && (
+                    <select
+                      value={randomClinician}
+                      onChange={(e) => setRandomClinician(e.target.value)}
+                      className="w-full mb-4 px-4 py-2.5 border rounded-lg text-sm bg-white"
+                    >
+                      <option value="">Select clinician...</option>
+                      {clinicianStats.map((stat) => (
+                        <option key={stat.name} value={stat.name}>
+                          {stat.name} ({stat.availableSlots} available)
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  {/* Day selector for by-day mode */}
+                  {randomMode === "by-day" && (
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {availableDays.map((day) => (
+                        <button
+                          key={day}
+                          onClick={() => toggleRandomDay(day)}
+                          className={`px-3 py-1.5 text-sm rounded-lg font-medium transition-colors ${
+                            randomDays.has(day)
+                              ? "bg-amber-500 text-white"
+                              : "bg-white/70 hover:bg-white"
+                          }`}
+                        >
+                          {day.slice(0, 3)}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Count and Generate */}
+                  <div className="flex items-center gap-4">
+                    <span className="text-sm text-gray-700">Pick</span>
+                    <select
+                      value={randomCount}
+                      onChange={(e) => setRandomCount(parseInt(e.target.value))}
+                      className="border rounded-lg px-3 py-2 text-sm bg-white"
+                    >
+                      {[2, 3, 4, 5, 6].map((n) => (
+                        <option key={n} value={n}>{n}</option>
+                      ))}
+                    </select>
+                    <span className="text-sm text-gray-700">slots</span>
+                    <button
+                      onClick={handleGenerateRandom}
+                      disabled={
+                        (randomMode === "by-clinician" && !randomClinician) ||
+                        (randomMode === "by-day" && randomDays.size === 0)
+                      }
+                      className="ml-auto px-5 py-2.5 bg-amber-500 text-white rounded-lg text-sm font-semibold hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-md"
+                    >
+                      <Shuffle className="w-4 h-4" />
+                      Generate
+                    </button>
+                  </div>
+                </div>
+
+                {/* Advanced Filters */}
+                <div className="mt-6 p-4 bg-gray-50 rounded-xl">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Filter className="w-4 h-4 text-gray-500" />
+                    <span className="text-sm font-medium text-gray-700">Filters</span>
+                  </div>
+                  <div className="flex flex-wrap gap-4">
+                    {client.insuranceProvider && (
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={onlyInsuranceMatch}
+                          onChange={(e) => setOnlyInsuranceMatch(e.target.checked)}
+                          className="rounded text-purple-600 w-4 h-4"
+                        />
+                        <span className="text-sm">Only insurance-matched</span>
+                      </label>
+                    )}
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={excludeOffered}
+                        onChange={(e) => setExcludeOffered(e.target.checked)}
+                        className="rounded text-purple-600 w-4 h-4"
+                      />
+                      <span className="text-sm">Exclude previously offered</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column - Results & Selection */}
+              <div className="w-1/2 overflow-y-auto p-8 bg-gray-50">
+                {/* Matching Slots Display */}
+                {matchingSlots.length > 0 && (
+                  <div className="mb-8">
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="font-semibold text-gray-900 text-lg">Matching Slots ({matchingSlots.length})</h4>
+                      <button
+                        onClick={() => {
+                          setSelectedClinicians(new Set());
+                          setSelectedDays(new Set());
+                          setSelectedTimeRange("all");
+                        }}
+                        className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1 rounded-lg hover:bg-white"
+                      >
+                        Clear Filters
+                      </button>
+                    </div>
+                    <div className="space-y-3 max-h-64 overflow-y-auto">
+                      {matchingSlots.map(({ slot, availableClinicians }) => (
+                        <div
+                          key={slot.id}
+                          className={`flex items-center justify-between p-4 rounded-xl border bg-white ${
+                            wasOffered(slot.id) ? "border-amber-300" : "border-gray-200"
+                          }`}
+                        >
+                          <div>
+                            <p className="font-medium text-gray-900">{slot.day} at {slot.time}</p>
+                            <p className="text-sm text-gray-500">{availableClinicians.join(", ")}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {wasOffered(slot.id) && (
+                              <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-lg">Previously offered</span>
+                            )}
+                            {matchesInsurance(slot, client.insuranceProvider) && (
+                              <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-lg flex items-center gap-1">
+                                <CheckCircle className="w-3 h-3" />
+                                Insurance
+                              </span>
+                            )}
+                            <button
+                              onClick={() => addSlotToSelection(slot, availableClinicians[0])}
+                              className="p-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200"
+                            >
+                              <Plus className="w-5 h-5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Selected Slots Preview */}
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="font-semibold text-gray-900 text-lg">
+                      Selected Slots {selectedSlots.length > 0 && `(${selectedSlots.length})`}
+                    </h4>
+                    {selectedSlots.length > 0 && (
+                      <button
+                        onClick={clearAllSelections}
+                        className="text-sm text-red-600 hover:text-red-700 px-3 py-1 rounded-lg hover:bg-red-50"
+                      >
+                        Clear All
+                      </button>
+                    )}
+                  </div>
+
+                  {selectedSlots.length === 0 ? (
+                    <div className="text-center py-12 bg-white rounded-xl border-2 border-dashed border-gray-200">
+                      <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                      <p className="text-gray-500">No slots selected yet</p>
+                      <p className="text-sm text-gray-400 mt-1">Use the filters on the left or generate random slots</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="space-y-3 mb-6">
+                        {selectedSlots.map((slot, index) => (
+                          <div
+                            key={slot.slotId}
+                            className="flex items-center justify-between p-4 bg-white border border-purple-200 rounded-xl shadow-sm"
+                          >
+                            <div className="flex items-center gap-4">
+                              <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center text-purple-600 font-semibold">
+                                {index + 1}
+                              </div>
+                              <div>
+                                <p className="font-medium text-gray-900">{slot.day} at {slot.time}</p>
+                                <p className="text-sm text-gray-500">{slot.clinicians.join(" or ")}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {wasOffered(slot.slotId) && (
+                                <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-lg">Previously offered</span>
+                              )}
+                              <button
+                                onClick={() => removeSlotFromSelection(slot.slotId)}
+                                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
+                              >
+                                <X className="w-5 h-5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Email Preview */}
+                      <div className="bg-white rounded-xl border border-gray-200 p-5">
+                        <p className="text-xs text-gray-500 mb-3 font-semibold uppercase tracking-wide">Email Preview</p>
+                        <div className="text-sm text-gray-700 space-y-1">
+                          <p>I have the following availability:</p>
+                          {selectedSlots.map((slot) => (
+                            <p key={slot.slotId}>
+                              • {slot.day} at {slot.time} with {slot.clinicians.join(" or ")}
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Browse All Tab */
+            <div className="h-full overflow-y-auto p-8">
+              {/* Filters */}
+              <div className="flex items-center gap-4 mb-6">
+                <div className="relative flex-1 max-w-md">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search by day, time, clinician..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-12 pr-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+                {client.insuranceProvider && (
+                  <button
+                    onClick={() => setInsuranceFilter(insuranceFilter === "all" ? "matching" : "all")}
+                    className={`flex items-center gap-2 px-5 py-3 rounded-xl font-medium transition-colors ${
+                      insuranceFilter === "matching"
+                        ? "bg-blue-100 text-blue-700 border border-blue-200"
+                        : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
+                    }`}
+                  >
+                    <Shield className="w-5 h-5" />
+                    {insuranceFilter === "matching" ? "Insurance Match" : "Show All"}
+                  </button>
+                )}
+              </div>
+
+              {/* Slots List */}
+              {filteredSlots.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center">
+                  <Search className="w-16 h-16 text-gray-300 mb-4" />
+                  <p className="text-gray-900 font-medium text-lg mb-2">No matching slots</p>
+                  <p className="text-gray-500">
+                    Try adjusting your search or{" "}
+                    <button
+                      onClick={() => setInsuranceFilter("all")}
+                      className="text-purple-600 hover:underline"
+                    >
+                      show all insurance types
+                    </button>
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-4">
+                  {filteredSlots.map((slot) => {
+                    const insuranceMatches = matchesInsurance(slot, client.insuranceProvider);
+                    const offered = wasOffered(slot.id);
+
+                    return (
+                      <div
+                        key={slot.id}
+                        className={`rounded-xl border p-5 transition-colors ${
+                          offered
+                            ? "border-amber-300 bg-amber-50"
+                            : "border-gray-200 bg-white hover:border-gray-300"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-3">
+                            <div className="font-semibold text-gray-900 text-lg">
+                              {slot.day} at {slot.time}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {offered && (
+                              <span className="text-xs px-2.5 py-1 rounded-lg bg-amber-200 text-amber-800 font-medium">
+                                Previously offered
+                              </span>
+                            )}
+                            {insuranceMatches && (
+                              <span className="flex items-center gap-1 text-xs text-green-700 bg-green-100 px-2.5 py-1 rounded-lg font-medium">
+                                <CheckCircle className="w-3.5 h-3.5" />
+                                Insurance
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          {slot.clinicians.map((clinician) => {
+                            const isSelected = selectedSlots.some(
+                              s => s.slotId === slot.id && s.clinicians.includes(clinician)
+                            );
+
+                            return (
+                              <button
+                                key={clinician}
+                                onClick={() => {
+                                  if (isSelected) {
+                                    setSelectedSlots(prev => {
+                                      const existing = prev.find(s => s.slotId === slot.id);
+                                      if (!existing) return prev;
+                                      const newClinicians = existing.clinicians.filter(c => c !== clinician);
+                                      if (newClinicians.length === 0) {
+                                        return prev.filter(s => s.slotId !== slot.id);
+                                      }
+                                      return prev.map(s => s.slotId === slot.id ? { ...s, clinicians: newClinicians } : s);
+                                    });
+                                  } else {
+                                    addSlotToSelection(slot, clinician);
+                                  }
+                                }}
+                                className={`px-4 py-2.5 rounded-lg border font-medium transition-colors ${
+                                  isSelected
+                                    ? "bg-purple-100 border-purple-500 text-purple-700"
+                                    : "bg-gray-50 border-gray-200 hover:border-purple-300 hover:bg-purple-50 text-gray-900"
+                                }`}
+                              >
+                                {isSelected && <Check className="w-4 h-4 inline mr-1.5" />}
+                                {clinician}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between p-6 border-t bg-gray-50">
-          <div className="text-sm text-gray-500">
-            {totalSelectedClinicians > 0 && (
-              <span>
-                {selectedSlots.length} slot{selectedSlots.length !== 1 ? "s" : ""},{" "}
-                {totalSelectedClinicians} option{totalSelectedClinicians !== 1 ? "s" : ""} selected
+        <div className="flex items-center justify-between px-8 py-5 border-t bg-gray-50 rounded-b-2xl">
+          <div className="text-gray-600">
+            {selectedSlots.length > 0 && (
+              <span className="font-medium">
+                {selectedSlots.length} slot{selectedSlots.length !== 1 ? "s" : ""} selected
               </span>
             )}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             <button
               onClick={handleClose}
-              className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              className="px-6 py-2.5 text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors font-medium"
             >
               Cancel
             </button>
             <button
               onClick={handleInsert}
               disabled={selectedSlots.length === 0}
-              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="px-6 py-2.5 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-medium shadow-md"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-5 h-5" />
               Insert Availability
             </button>
           </div>
