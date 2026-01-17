@@ -62,7 +62,7 @@ export async function GET() {
 
     // Get form responses from Google Sheets
     let formResponsesCount = 0;
-    let formTimestamps: string[] = [];
+    let formResponseIds: string[] = [];
     try {
       const formResponses = await sheets.spreadsheets.values.get({
         spreadsheetId,
@@ -71,10 +71,8 @@ export async function GET() {
       const rows = formResponses.data.values || [];
       if (rows.length > 1) {
         formResponsesCount = rows.length - 1;
-        // Timestamp is always in column A for Google Forms
-        formTimestamps = rows.slice(1)
-          .map((row: string[]) => row[0]?.trim())
-          .filter(Boolean);
+        // Generate row-based IDs for each form response (row-2, row-3, etc.)
+        formResponseIds = rows.slice(1).map((_, index) => `row-${index + 2}`);
       }
     } catch {
       // Sheet might not exist
@@ -83,16 +81,17 @@ export async function GET() {
     // Get existing clients from SQLite to check what's already synced
     const existingClients = await clientsDbApi.getAll();
     const clientsCount = existingClients.length;
-    const existingTimestamps = new Set<string>(
+    // Use formResponseId (row number) as the unique identifier, not timestamp
+    const existingFormResponseIds = new Set<string>(
       existingClients
-        .filter((c) => c.formTimestamp)
-        .map((c) => c.formTimestamp!)
+        .filter((c) => c.formResponseId)
+        .map((c) => c.formResponseId!)
     );
 
-    // Count how many form responses are NOT yet synced (by timestamp - the unique identifier)
+    // Count how many form responses are NOT yet synced (by row ID)
     let pendingSync = 0;
-    for (const timestamp of formTimestamps) {
-      if (!existingTimestamps.has(timestamp)) {
+    for (const responseId of formResponseIds) {
+      if (!existingFormResponseIds.has(responseId)) {
         pendingSync++;
       }
     }
@@ -169,38 +168,39 @@ export async function POST() {
     });
 
     // Log the mapping for debugging
+    console.log("=== SYNC DEBUG ===");
+    console.log("Form headers:", formHeaders);
     console.log("Header mapping:", Object.fromEntries(headerMapping));
+    console.log("First data row:", formDataRows[formDataRows.length - 1]); // Most recent entry
 
     // Get existing clients from SQLite to check for already synced entries
     const existingClients = await clientsDbApi.getAll();
-    const existingTimestamps = new Set<string>(
+    // Use formResponseId (row number) as the unique identifier
+    const existingFormResponseIds = new Set<string>(
       existingClients
-        .filter((c) => c.formTimestamp)
-        .map((c) => c.formTimestamp!)
+        .filter((c) => c.formResponseId)
+        .map((c) => c.formResponseId!)
     );
 
     // Process each form response
     for (let rowIndex = 0; rowIndex < formDataRows.length; rowIndex++) {
       const formRow = formDataRows[rowIndex];
+      const formResponseId = `row-${rowIndex + 2}`;
 
-      // Google Forms ALWAYS puts timestamp in column A - this is our unique identifier
-      const formTimestamp = formRow[0]?.trim();
-
-      if (!formTimestamp) {
-        result.errors.push(`Row ${rowIndex + 2}: Missing timestamp`);
+      // Skip if this row has already been synced
+      if (existingFormResponseIds.has(formResponseId)) {
         continue;
       }
 
-      // Skip if this timestamp already exists in Clients - already synced
-      if (existingTimestamps.has(formTimestamp)) {
-        continue;
-      }
+      // Get timestamp from column A (for display/tracking, not deduplication)
+      const formTimestamp = formRow[0]?.trim() || "";
 
       // Map form fields to client fields using our header mapping
       const clientData: Partial<Client> = {
         status: "new",
         source: "google_form",
-        formResponseId: `row-${rowIndex + 2}`,
+        formResponseId: formResponseId,
+        formTimestamp: formTimestamp,
       };
 
       // Map each form column to client field using the header mapping
@@ -240,8 +240,8 @@ export async function POST() {
         });
 
         result.newClients++;
-        existingTimestamps.add(formTimestamp);
-        result.syncedIds.push(formTimestamp);
+        existingFormResponseIds.add(formResponseId);
+        result.syncedIds.push(formResponseId);
       } catch (err) {
         result.errors.push(`Row ${rowIndex + 2}: Failed to create client - ${err}`);
       }
