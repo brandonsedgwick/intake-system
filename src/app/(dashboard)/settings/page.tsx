@@ -242,6 +242,7 @@ function FollowUpSettings() {
     followUp1Days: "",
     followUp2Days: "",
     autoCloseDays: "",
+    outreachAttemptCount: "",
   });
 
   // Initialize form data when settings load
@@ -251,6 +252,7 @@ function FollowUpSettings() {
         followUp1Days: settings.followUp1Days || "3",
         followUp2Days: settings.followUp2Days || "5",
         autoCloseDays: settings.autoCloseDays || "7",
+        outreachAttemptCount: settings.outreachAttemptCount || "3",
       });
     }
   });
@@ -330,6 +332,35 @@ function FollowUpSettings() {
             />
             <span className="text-sm text-gray-600">business days</span>
           </div>
+        </div>
+      </div>
+
+      {/* Outreach Attempts Section */}
+      <div className="border-t pt-6">
+        <h3 className="font-medium text-gray-900 mb-4">Outreach Attempts</h3>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Number of Outreach Attempts
+          </label>
+          <div className="flex items-center gap-2">
+            <select
+              value={formData.outreachAttemptCount || settings?.outreachAttemptCount || "3"}
+              onChange={(e) =>
+                setFormData({ ...formData, outreachAttemptCount: e.target.value })
+              }
+              className="border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {[2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
+                <option key={num} value={num.toString()}>
+                  {num}
+                </option>
+              ))}
+            </select>
+            <span className="text-sm text-gray-600">attempts (includes initial + follow-ups)</span>
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            Example: 3 = Initial Outreach + Follow-up #1 + Follow-up #2
+          </p>
         </div>
       </div>
 

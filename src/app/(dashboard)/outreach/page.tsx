@@ -32,6 +32,12 @@ import {
 import { ClosedCasesSection } from "@/components/clients/closed-cases-section";
 import { ClientPreviewModal } from "@/components/clients/client-preview-modal";
 import { RichTextEditor } from "@/components/templates/rich-text-editor";
+import { OutreachDashboard } from "@/components/outreach";
+import {
+  useOutreachAttempts,
+  useInitializeOutreachAttempts,
+  useUpdateOutreachAttempt,
+} from "@/hooks/use-outreach-attempts";
 import { formatRelativeTime, formatDate } from "@/lib/utils";
 import Link from "next/link";
 import {
@@ -1411,6 +1417,11 @@ function ReadingPane({
   const { addToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Outreach attempts tracking
+  const { data: outreachAttempts = [] } = useOutreachAttempts(client.id);
+  const initializeAttempts = useInitializeOutreachAttempts();
+  const updateAttempt = useUpdateOutreachAttempt();
+
   const [templateDropdownOpen, setTemplateDropdownOpen] = useState(false);
   const [showEmailPreview, setShowEmailPreview] = useState(false);
   const [showAvailabilityModal, setShowAvailabilityModal] = useState(false);
@@ -1576,6 +1587,37 @@ ${slotLines.join("\n")}
         templateType: selectedTemplate?.type,
         attachments: attachments.length > 0 ? attachments : undefined,
       });
+
+      // Track outreach attempt
+      // If no outreach attempts exist, initialize them first
+      let attempts = outreachAttempts;
+      if (attempts.length === 0) {
+        try {
+          await initializeAttempts.mutateAsync(client.id);
+          // Refetch would be handled by the hook, but we need to update the next pending
+        } catch {
+          // Failed to initialize attempts, continue without tracking
+          console.error("Failed to initialize outreach attempts");
+        }
+      }
+
+      // Find the next pending attempt and mark it as sent
+      const pendingAttempt = attempts.find((a) => a.status === "pending");
+      if (pendingAttempt) {
+        try {
+          await updateAttempt.mutateAsync({
+            clientId: client.id,
+            attemptId: pendingAttempt.id,
+            status: "sent",
+            sentAt: new Date().toISOString(),
+            emailSubject: editedSubject,
+            emailPreview: editedBody.replace(/<[^>]*>/g, "").substring(0, 200),
+          });
+        } catch {
+          // Failed to update attempt, continue without tracking
+          console.error("Failed to update outreach attempt");
+        }
+      }
 
       // Save offered availability if any slots were selected
       if (pendingOfferedSlots.length > 0) {
@@ -3016,14 +3058,14 @@ export default function OutreachPage() {
       {/* Main Content - Left/Right Split */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Panel - Client List */}
-        <div className="w-[380px] flex-shrink-0 border-r bg-white flex flex-col">
+        <div className="w-[280px] flex-shrink-0 border-r bg-white flex flex-col">
           {/* Search Bar */}
           <div className="p-3 border-b bg-gray-50">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search outreach clients..."
+                placeholder="Search clients..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-9 pr-4 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
@@ -3064,32 +3106,44 @@ export default function OutreachPage() {
           </div>
         </div>
 
-        {/* Right Panel - Reading Pane */}
-        <div className="flex-1 bg-white overflow-hidden flex flex-col">
-          {selectedClient ? (
-            <ReadingPane
-              client={selectedClient}
-              selectedTemplate={selectedTemplate}
-              onSelectTemplate={setSelectedTemplate}
-              onClose={() => setSelectedClientId(null)}
-              onCloseCase={() => setCloseConfirmClient(selectedClient)}
-              onEmailSent={handleEmailSent}
-              onMoveToScheduling={handleMoveToScheduling}
-              onMoveToReferral={handleMoveToReferral}
+        {/* Right Panel - Split View: Dashboard Table + Details */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Top Section: Outreach Dashboard Table (~45% height) */}
+          <div className="h-[45%] border-b overflow-hidden">
+            <OutreachDashboard
+              clients={outreachClients || []}
+              selectedClientId={selectedClientId}
+              onSelectClient={handleClientClick}
             />
-          ) : (
-            <div className="flex-1 flex items-center justify-center bg-gray-50">
-              <div className="text-center">
-                <Mail className="w-16 h-16 mx-auto text-gray-300 mb-4" />
-                <h3 className="text-lg font-medium text-gray-600 mb-2">
-                  Select a client to view details
-                </h3>
-                <p className="text-sm text-gray-500">
-                  Choose a client from the list to compose and send outreach emails
-                </p>
+          </div>
+
+          {/* Bottom Section: Client Details (~55% height) */}
+          <div className="flex-1 bg-white overflow-hidden flex flex-col">
+            {selectedClient ? (
+              <ReadingPane
+                client={selectedClient}
+                selectedTemplate={selectedTemplate}
+                onSelectTemplate={setSelectedTemplate}
+                onClose={() => setSelectedClientId(null)}
+                onCloseCase={() => setCloseConfirmClient(selectedClient)}
+                onEmailSent={handleEmailSent}
+                onMoveToScheduling={handleMoveToScheduling}
+                onMoveToReferral={handleMoveToReferral}
+              />
+            ) : (
+              <div className="flex-1 flex items-center justify-center bg-gray-50">
+                <div className="text-center">
+                  <Mail className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+                  <h3 className="text-lg font-medium text-gray-600 mb-2">
+                    Select a client to view details
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    Choose a client from the table or list to compose and send outreach emails
+                  </p>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
 

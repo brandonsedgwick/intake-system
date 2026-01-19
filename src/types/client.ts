@@ -401,3 +401,51 @@ export interface CaseReopenHistory {
   closedReason?: string;
   closedFromWorkflow?: ClosedFromWorkflow;
 }
+
+// ============================================
+// Outreach Attempt Types
+// ============================================
+
+export type OutreachAttemptStatus = "pending" | "sent" | "skipped";
+
+export type OutreachAttemptType =
+  | "initial_outreach"
+  | "follow_up_1"
+  | "follow_up_2"
+  | "follow_up_3"
+  | "follow_up_4"
+  | "follow_up_5"
+  | "follow_up_6"
+  | "follow_up_7"
+  | "follow_up_8"
+  | "follow_up_9";
+
+export interface OutreachAttempt {
+  id: string;
+  clientId: string;
+  attemptNumber: number;
+  attemptType: OutreachAttemptType;
+  sentAt?: string;
+  status: OutreachAttemptStatus;
+  emailSubject?: string;
+  emailPreview?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Helper to get attempt type from attempt number
+export function getAttemptType(attemptNumber: number): OutreachAttemptType {
+  if (attemptNumber === 1) return "initial_outreach";
+  return `follow_up_${attemptNumber - 1}` as OutreachAttemptType;
+}
+
+// Helper to get display label for attempt
+export function getAttemptLabel(attemptNumber: number): string {
+  if (attemptNumber === 1) return "Initial Outreach";
+  return `Follow-up #${attemptNumber - 1}`;
+}
+
+// Client with outreach attempts included
+export interface ClientWithOutreachAttempts extends Client {
+  outreachAttempts?: OutreachAttempt[];
+}

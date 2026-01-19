@@ -1868,3 +1868,205 @@ export const caseReopenHistoryDbApi = {
     }));
   },
 };
+
+// ============================================
+// Outreach Attempts API
+// ============================================
+import {
+  OutreachAttempt,
+  OutreachAttemptStatus,
+  OutreachAttemptType,
+} from "@/types/client";
+
+export const outreachAttemptsDbApi = {
+  async getByClientId(clientId: string): Promise<OutreachAttempt[]> {
+    const attempts = await prisma.outreachAttempt.findMany({
+      where: { clientId },
+      orderBy: { attemptNumber: "asc" },
+    });
+
+    return attempts.map((a) => ({
+      id: a.id,
+      clientId: a.clientId,
+      attemptNumber: a.attemptNumber,
+      attemptType: a.attemptType as OutreachAttemptType,
+      sentAt: a.sentAt?.toISOString(),
+      status: a.status as OutreachAttemptStatus,
+      emailSubject: a.emailSubject || undefined,
+      emailPreview: a.emailPreview || undefined,
+      createdAt: a.createdAt.toISOString(),
+      updatedAt: a.updatedAt.toISOString(),
+    }));
+  },
+
+  async getById(id: string): Promise<OutreachAttempt | null> {
+    const a = await prisma.outreachAttempt.findUnique({ where: { id } });
+    if (!a) return null;
+
+    return {
+      id: a.id,
+      clientId: a.clientId,
+      attemptNumber: a.attemptNumber,
+      attemptType: a.attemptType as OutreachAttemptType,
+      sentAt: a.sentAt?.toISOString(),
+      status: a.status as OutreachAttemptStatus,
+      emailSubject: a.emailSubject || undefined,
+      emailPreview: a.emailPreview || undefined,
+      createdAt: a.createdAt.toISOString(),
+      updatedAt: a.updatedAt.toISOString(),
+    };
+  },
+
+  async create(data: {
+    clientId: string;
+    attemptNumber: number;
+    attemptType: OutreachAttemptType;
+    status?: OutreachAttemptStatus;
+    sentAt?: string;
+    emailSubject?: string;
+    emailPreview?: string;
+  }): Promise<OutreachAttempt> {
+    const a = await prisma.outreachAttempt.create({
+      data: {
+        clientId: data.clientId,
+        attemptNumber: data.attemptNumber,
+        attemptType: data.attemptType,
+        status: data.status || "pending",
+        sentAt: data.sentAt ? new Date(data.sentAt) : null,
+        emailSubject: data.emailSubject || null,
+        emailPreview: data.emailPreview || null,
+      },
+    });
+
+    return {
+      id: a.id,
+      clientId: a.clientId,
+      attemptNumber: a.attemptNumber,
+      attemptType: a.attemptType as OutreachAttemptType,
+      sentAt: a.sentAt?.toISOString(),
+      status: a.status as OutreachAttemptStatus,
+      emailSubject: a.emailSubject || undefined,
+      emailPreview: a.emailPreview || undefined,
+      createdAt: a.createdAt.toISOString(),
+      updatedAt: a.updatedAt.toISOString(),
+    };
+  },
+
+  async update(
+    id: string,
+    updates: Partial<{
+      status: OutreachAttemptStatus;
+      sentAt: string;
+      emailSubject: string;
+      emailPreview: string;
+    }>
+  ): Promise<OutreachAttempt | null> {
+    const existing = await prisma.outreachAttempt.findUnique({ where: { id } });
+    if (!existing) return null;
+
+    const a = await prisma.outreachAttempt.update({
+      where: { id },
+      data: {
+        status: updates.status ?? existing.status,
+        sentAt: updates.sentAt !== undefined
+          ? new Date(updates.sentAt)
+          : existing.sentAt,
+        emailSubject: updates.emailSubject !== undefined
+          ? updates.emailSubject || null
+          : existing.emailSubject,
+        emailPreview: updates.emailPreview !== undefined
+          ? updates.emailPreview || null
+          : existing.emailPreview,
+      },
+    });
+
+    return {
+      id: a.id,
+      clientId: a.clientId,
+      attemptNumber: a.attemptNumber,
+      attemptType: a.attemptType as OutreachAttemptType,
+      sentAt: a.sentAt?.toISOString(),
+      status: a.status as OutreachAttemptStatus,
+      emailSubject: a.emailSubject || undefined,
+      emailPreview: a.emailPreview || undefined,
+      createdAt: a.createdAt.toISOString(),
+      updatedAt: a.updatedAt.toISOString(),
+    };
+  },
+
+  async markAsSent(
+    id: string,
+    emailSubject: string,
+    emailPreview: string
+  ): Promise<OutreachAttempt | null> {
+    return this.update(id, {
+      status: "sent",
+      sentAt: new Date().toISOString(),
+      emailSubject,
+      emailPreview: emailPreview.substring(0, 200),
+    });
+  },
+
+  async delete(id: string): Promise<boolean> {
+    try {
+      await prisma.outreachAttempt.delete({ where: { id } });
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  async deleteByClientId(clientId: string): Promise<number> {
+    const result = await prisma.outreachAttempt.deleteMany({
+      where: { clientId },
+    });
+    return result.count;
+  },
+
+  async initializeForClient(
+    clientId: string,
+    attemptCount: number = 3
+  ): Promise<OutreachAttempt[]> {
+    const attempts: OutreachAttempt[] = [];
+
+    for (let i = 1; i <= attemptCount; i++) {
+      const attemptType: OutreachAttemptType =
+        i === 1 ? "initial_outreach" : (`follow_up_${i - 1}` as OutreachAttemptType);
+
+      const attempt = await this.create({
+        clientId,
+        attemptNumber: i,
+        attemptType,
+        status: "pending",
+      });
+      attempts.push(attempt);
+    }
+
+    return attempts;
+  },
+
+  async getNextPendingAttempt(clientId: string): Promise<OutreachAttempt | null> {
+    const attempt = await prisma.outreachAttempt.findFirst({
+      where: {
+        clientId,
+        status: "pending",
+      },
+      orderBy: { attemptNumber: "asc" },
+    });
+
+    if (!attempt) return null;
+
+    return {
+      id: attempt.id,
+      clientId: attempt.clientId,
+      attemptNumber: attempt.attemptNumber,
+      attemptType: attempt.attemptType as OutreachAttemptType,
+      sentAt: attempt.sentAt?.toISOString(),
+      status: attempt.status as OutreachAttemptStatus,
+      emailSubject: attempt.emailSubject || undefined,
+      emailPreview: attempt.emailPreview || undefined,
+      createdAt: attempt.createdAt.toISOString(),
+      updatedAt: attempt.updatedAt.toISOString(),
+    };
+  },
+};

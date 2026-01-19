@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Outreach Dashboard - Layout Mockup</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .view-toggle button.active { background: #7c3aed; color: white; }
+    .view-toggle button:not(.active) { background: #f3f4f6; color: #374151; }
+  </style>
+</head>
+<body class="bg-gray-100 h-screen flex flex-col">
+
+  <!-- Header -->
+  <header class="bg-white border-b px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-4">
+      <h1 class="text-xl font-bold text-gray-900">Outreach</h1>
+      <div class="relative">
+        <input type="text" placeholder="Search clients..."
+               class="pl-10 pr-4 py-2 border rounded-lg text-sm w-64">
+        <svg class="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+        </svg>
+      </div>
+    </div>
+    <div class="flex items-center gap-6 text-sm">
+      <div class="flex items-center gap-2">
+        <span class="w-2 h-2 bg-amber-500 rounded-full"></span>
+        <span class="text-gray-600">3 Pending</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="w-2 h-2 bg-blue-500 rounded-full"></span>
+        <span class="text-gray-600">2 Awaiting Response</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="w-2 h-2 bg-purple-500 rounded-full"></span>
+        <span class="text-gray-600">1 Follow-up Due</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <div class="flex-1 flex overflow-hidden">
+
+    <!-- Left Pane: Client List -->
+    <div class="w-[380px] flex-shrink-0 border-r bg-white flex flex-col">
+      <div class="p-4 border-b">
+        <h2 class="font-semibold text-gray-900">Clients (6)</h2>
+      </div>
+      <div class="flex-1 overflow-y-auto">
+        <!-- Client Row - Selected -->
+        <div class="p-4 border-b bg-purple-50 border-l-4 border-l-purple-500 cursor-pointer">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                <span class="text-purple-700 font-medium">SJ</span>
+              </div>
+              <div>
+                <p class="font-medium text-gray-900">Sarah Johnson</p>
+                <p class="text-sm text-gray-500">sarah.j@email.com</p>
+              </div>
+            </div>
+            <span class="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded">F/U #2 Due</span>
+          </div>
+        </div>
+        <!-- Client Row -->
+        <div class="p-4 border-b hover:bg-gray-50 cursor-pointer">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
+                <span class="text-gray-600 font-medium">MR</span>
+              </div>
+              <div>
+                <p class="font-medium text-gray-900">Michael Rodriguez</p>
+                <p class="text-sm text-gray-500">mrodriguez@email.com</p>
+              </div>
+            </div>
+            <span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">Outreach Sent</span>
+          </div>
+        </div>
+        <!-- Client Row -->
+        <div class="p-4 border-b hover:bg-gray-50 cursor-pointer">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
+                <span class="text-gray-600 font-medium">EW</span>
+              </div>
+              <div>
+                <p class="font-medium text-gray-900">Emily Williams</p>
+                <p class="text-sm text-gray-500">emily.w@email.com</p>
+              </div>
+            </div>
+            <span class="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">Pending</span>
+          </div>
+        </div>
+        <!-- Client Row -->
+        <div class="p-4 border-b hover:bg-gray-50 cursor-pointer">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
+                <span class="text-gray-600 font-medium">JD</span>
+              </div>
+              <div>
+                <p class="font-medium text-gray-900">James Davis</p>
+                <p class="text-sm text-gray-500">jdavis@email.com</p>
+              </div>
+            </div>
+            <span class="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">F/U #1 Sent</span>
+          </div>
+        </div>
+        <!-- Client Row -->
+        <div class="p-4 border-b hover:bg-gray-50 cursor-pointer">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
+                <span class="text-gray-600 font-medium">LP</span>
+              </div>
+              <div>
+                <p class="font-medium text-gray-900">Lisa Parker</p>
+                <p class="text-sm text-gray-500">lisa.p@email.com</p>
+              </div>
+            </div>
+            <span class="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">Pending</span>
+          </div>
+        </div>
+        <!-- Client Row -->
+        <div class="p-4 border-b hover:bg-gray-50 cursor-pointer">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
+                <span class="text-gray-600 font-medium">RB</span>
+              </div>
+              <div>
+                <p class="font-medium text-gray-900">Robert Brown</p>
+                <p class="text-sm text-gray-500">rbrown@email.com</p>
+              </div>
+            </div>
+            <span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">Outreach Sent</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Pane: Dashboard + Details -->
+    <div class="flex-1 flex flex-col overflow-hidden bg-gray-50">
+
+      <!-- TOP SECTION: Outreach Dashboard (~45%) -->
+      <div class="h-[45%] bg-white border-b overflow-hidden flex flex-col">
+
+        <!-- Dashboard Header -->
+        <div class="px-6 py-4 border-b flex items-center justify-between">
+          <div>
+            <h2 class="text-xl font-bold text-gray-900">Sarah Johnson</h2>
+            <p class="text-sm text-gray-500">Submitted: January 8, 2026</p>
+          </div>
+          <div class="flex items-center gap-3">
+            <button class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-sm">
+              Move to Referral
+            </button>
+            <button class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-sm">
+              Close Case
+            </button>
+          </div>
+        </div>
+
+        <!-- Dashboard Content -->
+        <div class="flex-1 p-6 overflow-hidden">
+
+          <!-- Next Pending Action -->
+          <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center">
+                  <svg class="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  </svg>
+                </div>
+                <div>
+                  <p class="text-sm text-amber-600 font-medium">NEXT PENDING ACTION</p>
+                  <p class="text-lg font-semibold text-gray-900">Send Follow-up #2</p>
+                  <p class="text-sm text-gray-600">Due: January 21, 2026 <span class="text-amber-600">(in 3 days)</span></p>
+                </div>
+              </div>
+              <button class="px-5 py-2.5 bg-amber-500 text-white rounded-lg font-medium hover:bg-amber-600">
+                Process Now
+              </button>
+            </div>
+          </div>
+
+          <!-- Outreach Efforts - Card View -->
+          <div id="card-view">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="font-semibold text-gray-900">Outreach Efforts</h3>
+              <div class="view-toggle flex rounded-lg overflow-hidden border">
+                <button class="px-3 py-1.5 text-sm active" onclick="showCards()">Cards</button>
+                <button class="px-3 py-1.5 text-sm" onclick="showTimeline()">Timeline</button>
+              </div>
+            </div>
+
+            <!-- Card Columns -->
+            <div class="grid grid-cols-3 gap-4">
+              <!-- Initial Outreach - Sent -->
+              <div class="bg-green-50 border border-green-200 rounded-xl p-4">
+                <div class="flex items-center gap-2 mb-3">
+                  <div class="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
+                    <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                  </div>
+                  <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium">SENT</span>
+                </div>
+                <h4 class="font-semibold text-gray-900 mb-1">Initial Outreach</h4>
+                <p class="text-sm text-gray-600">January 10, 2026</p>
+                <p class="text-xs text-gray-500">10:30 AM</p>
+              </div>
+
+              <!-- Follow-up #1 - Sent -->
+              <div class="bg-green-50 border border-green-200 rounded-xl p-4">
+                <div class="flex items-center gap-2 mb-3">
+                  <div class="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
+                    <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                  </div>
+                  <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium">SENT</span>
+                </div>
+                <h4 class="font-semibold text-gray-900 mb-1">Follow-up #1</h4>
+                <p class="text-sm text-gray-600">January 14, 2026</p>
+                <p class="text-xs text-gray-500">2:15 PM</p>
+              </div>
+
+              <!-- Follow-up #2 - Pending -->
+              <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                <div class="flex items-center gap-2 mb-3">
+                  <div class="w-6 h-6 bg-amber-400 rounded-full flex items-center justify-center">
+                    <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                  </div>
+                  <span class="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-medium">PENDING</span>
+                </div>
+                <h4 class="font-semibold text-gray-900 mb-1">Follow-up #2</h4>
+                <p class="text-sm text-gray-600">Due: Jan 21, 2026</p>
+                <p class="text-xs text-amber-600">in 3 days</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Outreach Efforts - Timeline View (Hidden by default) -->
+          <div id="timeline-view" class="hidden">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="font-semibold text-gray-900">Outreach Efforts</h3>
+              <div class="view-toggle flex rounded-lg overflow-hidden border">
+                <button class="px-3 py-1.5 text-sm" onclick="showCards()">Cards</button>
+                <button class="px-3 py-1.5 text-sm active" onclick="showTimeline()">Timeline</button>
+              </div>
+            </div>
+
+            <!-- Timeline -->
+            <div class="flex items-center justify-center py-4">
+              <!-- Initial Outreach -->
+              <div class="flex flex-col items-center">
+                <div class="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center shadow-lg">
+                  <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                  </svg>
+                </div>
+                <p class="text-sm font-semibold text-gray-900 mt-3">Initial</p>
+                <p class="text-sm text-gray-600">Jan 10</p>
+                <p class="text-xs text-green-600">Sent</p>
+              </div>
+
+              <!-- Connector -->
+              <div class="flex-1 h-1 bg-green-500 mx-4 max-w-[120px]"></div>
+
+              <!-- Follow-up #1 -->
+              <div class="flex flex-col items-center">
+                <div class="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center shadow-lg">
+                  <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                  </svg>
+                </div>
+                <p class="text-sm font-semibold text-gray-900 mt-3">F/U #1</p>
+                <p class="text-sm text-gray-600">Jan 14</p>
+                <p class="text-xs text-green-600">Sent</p>
+              </div>
+
+              <!-- Connector (partial) -->
+              <div class="flex-1 h-1 bg-gray-300 mx-4 max-w-[120px]"></div>
+
+              <!-- Follow-up #2 (Pending) -->
+              <div class="flex flex-col items-center">
+                <div class="w-12 h-12 bg-amber-400 rounded-full flex items-center justify-center shadow-lg">
+                  <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  </svg>
+                </div>
+                <p class="text-sm font-semibold text-gray-900 mt-3">F/U #2</p>
+                <p class="text-sm text-gray-600">Due Jan 21</p>
+                <p class="text-xs text-amber-600">Pending</p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- BOTTOM SECTION: Details (~55%) -->
+      <div class="flex-1 overflow-y-auto bg-white">
+        <div class="p-6 space-y-6">
+
+          <!-- Basic Information -->
+          <div class="border rounded-xl p-5">
+            <h3 class="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+              </svg>
+              Basic Information
+            </h3>
+            <div class="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <p class="text-gray-500">Full Name</p>
+                <p class="font-medium text-gray-900">Sarah Johnson</p>
+              </div>
+              <div>
+                <p class="text-gray-500">Age</p>
+                <p class="font-medium text-gray-900">34</p>
+              </div>
+              <div>
+                <p class="text-gray-500">Email</p>
+                <p class="font-medium text-gray-900">sarah.j@email.com</p>
+              </div>
+              <div>
+                <p class="text-gray-500">Phone</p>
+                <p class="font-medium text-gray-900">(555) 123-4567</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Offered Availability -->
+          <div class="border rounded-xl p-5">
+            <h3 class="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+              </svg>
+              Offered Availability
+            </h3>
+            <div class="space-y-2">
+              <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                <div class="w-8 h-8 bg-purple-100 rounded flex items-center justify-center text-purple-600 font-medium text-sm">1</div>
+                <div>
+                  <p class="font-medium text-gray-900">Monday at 9:00 AM</p>
+                  <p class="text-sm text-gray-500">Dr. Smith</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                <div class="w-8 h-8 bg-purple-100 rounded flex items-center justify-center text-purple-600 font-medium text-sm">2</div>
+                <div>
+                  <p class="font-medium text-gray-900">Wednesday at 2:00 PM</p>
+                  <p class="text-sm text-gray-500">Dr. Smith or Jane Doe</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                <div class="w-8 h-8 bg-purple-100 rounded flex items-center justify-center text-purple-600 font-medium text-sm">3</div>
+                <div>
+                  <p class="font-medium text-gray-900">Friday at 11:00 AM</p>
+                  <p class="text-sm text-gray-500">Mike R.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Clinical Details -->
+          <div class="border rounded-xl p-5">
+            <h3 class="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+              </svg>
+              Clinical Details
+            </h3>
+            <div class="space-y-4 text-sm">
+              <div>
+                <p class="text-gray-500">Insurance</p>
+                <p class="font-medium text-gray-900">Blue Cross Blue Shield</p>
+              </div>
+              <div>
+                <p class="text-gray-500">Presenting Concerns</p>
+                <p class="font-medium text-gray-900">Anxiety, work-related stress, relationship difficulties</p>
+              </div>
+              <div>
+                <p class="text-gray-500">Preferred Times</p>
+                <p class="font-medium text-gray-900">Mornings, Weekdays</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Risk Flags -->
+          <div class="border rounded-xl p-5">
+            <h3 class="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+              </svg>
+              Risk Flags
+            </h3>
+            <div class="flex gap-4 text-sm">
+              <div class="flex items-center gap-2">
+                <span class="w-3 h-3 bg-green-500 rounded-full"></span>
+                <span class="text-gray-600">No suicide attempt history</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="w-3 h-3 bg-green-500 rounded-full"></span>
+                <span class="text-gray-600">No hospitalization history</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Closed Cases Section (Collapsed) -->
+  <div class="border-t bg-white">
+    <button class="w-full px-6 py-3 flex items-center justify-between hover:bg-gray-50">
+      <span class="text-sm font-medium text-gray-600">Closed Cases (12)</span>
+      <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+      </svg>
+    </button>
+  </div>
+
+  <script>
+    function showCards() {
+      document.getElementById('card-view').classList.remove('hidden');
+      document.getElementById('timeline-view').classList.add('hidden');
+    }
+
+    function showTimeline() {
+      document.getElementById('card-view').classList.add('hidden');
+      document.getElementById('timeline-view').classList.remove('hidden');
+    }
+  </script>
+
+</body>
+</html>

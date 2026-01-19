@@ -311,6 +311,9 @@ model Client {
   closedFromWorkflow String? // "evaluation" | "outreach" | "referral" | "scheduling" | "other"
   closedFromStatus   String? // ClientStatus before closure
 
+  // Relations
+  outreachAttempts OutreachAttempt[]
+
   @@index([status])
   @@index([email])
   @@index([createdAt])
@@ -354,4 +357,26 @@ model CaseReopenHistory {
   @@index([clientId])
   @@index([reopenedAt])
   @@map("case_reopen_history")
+}
+
+// ============================================
+// Outreach Attempts - Track individual outreach efforts per client
+// ============================================
+model OutreachAttempt {
+  id            String    @id @default(uuid())
+  clientId      String
+  client        Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  attemptNumber Int // 1 = initial, 2 = follow_up_1, 3 = follow_up_2, etc.
+  attemptType   String // "initial_outreach" | "follow_up_1" | "follow_up_2" | etc.
+  sentAt        DateTime?
+  status        String    @default("pending") // "pending" | "sent" | "skipped"
+  emailSubject  String?
+  emailPreview  String? // First 200 chars of email body
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @default(now()) @updatedAt
+
+  @@unique([clientId, attemptNumber])
+  @@index([clientId])
+  @@index([status])
+  @@map("outreach_attempts")
 }
