@@ -32,7 +32,7 @@ import {
 import { ClosedCasesSection } from "@/components/clients/closed-cases-section";
 import { ClientPreviewModal } from "@/components/clients/client-preview-modal";
 import { RichTextEditor } from "@/components/templates/rich-text-editor";
-import { OutreachDashboard, ClientCommunications } from "@/components/outreach";
+import { OutreachDashboard, ClientCommunications, CommunicationsModal } from "@/components/outreach";
 import {
   useOutreachAttempts,
   useInitializeOutreachAttempts,
@@ -1483,6 +1483,9 @@ function ReadingPane({
   // Selected availability for communications tab
   const [communicationsSelectedAvailability, setCommunicationsSelectedAvailability] = useState<string[]>([]);
 
+  // Communications modal state
+  const [showCommunicationsModal, setShowCommunicationsModal] = useState(false);
+
   // Filter templates to outreach types only
   const outreachTemplates = useMemo(() => {
     return allTemplates?.filter(
@@ -2055,16 +2058,12 @@ ${slotLines.join("\n")}
           Details
         </button>
         <button
-          onClick={() => setActiveTab("communications")}
-          className={cn(
-            "flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors",
-            activeTab === "communications"
-              ? "border-purple-600 text-purple-600"
-              : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-          )}
+          onClick={() => setShowCommunicationsModal(true)}
+          className="flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors"
         >
           <MessageCircle className="w-4 h-4" />
           Client Communications
+          <ExternalLink className="w-3 h-3 ml-1" />
         </button>
         <button
           onClick={() => setActiveTab("outreach-history")}
@@ -2081,14 +2080,7 @@ ${slotLines.join("\n")}
       </div>
 
       {/* Tab Content */}
-      {activeTab === "communications" ? (
-        <ClientCommunications
-          client={client}
-          onOpenAvailabilityModal={() => setShowAvailabilityModal(true)}
-          selectedAvailability={communicationsSelectedAvailability}
-          onClearAvailability={() => setCommunicationsSelectedAvailability([])}
-        />
-      ) : activeTab === "outreach-history" ? (
+      {activeTab === "outreach-history" ? (
         <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
           <div className="space-y-6">
             {/* Outreach Attempts Timeline */}
@@ -2463,8 +2455,8 @@ ${slotLines.join("\n")}
           // Track selected slots for when email is sent
           setPendingOfferedSlots(selectedSlots);
 
-          // If on communications tab, update communications availability state
-          if (activeTab === "communications") {
+          // If communications modal is open, update communications availability state
+          if (showCommunicationsModal) {
             const slotStrings = selectedSlots.map(
               (slot) => `${slot.day} at ${slot.time} with ${slot.clinicians.join(" or ")}`
             );
@@ -2474,8 +2466,8 @@ ${slotLines.join("\n")}
           // If email preview is open and in edit mode, append to body
           if (showEmailPreview && isEditing) {
             setEditedBody((prev) => prev + "\n\n" + text);
-          } else {
-            // Store in clipboard and show toast
+          } else if (!showCommunicationsModal) {
+            // Store in clipboard and show toast (only if not in communications modal)
             navigator.clipboard.writeText(text);
             addToast({
               type: "success",
@@ -2738,6 +2730,21 @@ ${slotLines.join("\n")}
           </div>
         </div>
       )}
+
+      {/* Client Communications Modal */}
+      <CommunicationsModal
+        client={client}
+        isOpen={showCommunicationsModal}
+        onClose={() => setShowCommunicationsModal(false)}
+        onOpenAvailabilityModal={() => setShowAvailabilityModal(true)}
+        selectedAvailability={communicationsSelectedAvailability}
+        onClearAvailability={() => setCommunicationsSelectedAvailability([])}
+        outreachStats={{
+          attemptsSent: outreachAttempts.filter((a) => a.status === "sent").length,
+          totalAttempts: outreachAttempts.length,
+          nextFollowUpDue: outreachAttempts.find((a) => a.status === "pending")?.id,
+        }}
+      />
     </div>
   );
 }

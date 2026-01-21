@@ -1,0 +1,419 @@
+"use client";
+
+import { useState, useRef, useEffect, useMemo } from "react";
+import { Client, Communication } from "@/types/client";
+import { useClientCommunications } from "@/hooks/use-clients";
+import { useSendEmail, EmailAttachment } from "@/hooks/use-emails";
+import { MessageBubble } from "./message-bubble";
+import { ReplyComposer } from "./reply-composer";
+import {
+  X,
+  ExternalLink,
+  RefreshCw,
+  Mail,
+  Phone,
+  Send,
+  Clock,
+  CheckCircle,
+  AlertCircle,
+} from "lucide-react";
+import { formatDate, cn } from "@/lib/utils";
+import Link from "next/link";
+
+interface CommunicationsModalProps {
+  client: Client;
+  isOpen: boolean;
+  onClose: () => void;
+  onOpenAvailabilityModal: () => void;
+  selectedAvailability: string[];
+  onClearAvailability: () => void;
+  outreachStats?: {
+    attemptsSent: number;
+    totalAttempts: number;
+    nextFollowUpDue?: string;
+  };
+}
+
+export function CommunicationsModal({
+  client,
+  isOpen,
+  onClose,
+  onOpenAvailabilityModal,
+  selectedAvailability,
+  onClearAvailability,
+  outreachStats,
+}: CommunicationsModalProps) {
+  // Fetch communications for this client
+  const {
+    data: communications,
+    isLoading,
+    refetch,
+    isFetching,
+  } = useClientCommunications(client.id);
+
+  // Send email mutation
+  const sendEmail = useSendEmail();
+
+  // Scroll ref for auto-scroll to bottom
+  const threadEndRef = useRef<HTMLDivElement>(null);
+
+  // Sort communications by timestamp (oldest first for chat view)
+  const sortedCommunications = useMemo(() => {
+    if (!communications) return [];
+    return [...communications].sort(
+      (a, b) =>
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+  }, [communications]);
+
+  // Get thread start date
+  const threadStartDate = useMemo(() => {
+    if (sortedCommunications.length === 0) return null;
+    return new Date(sortedCommunications[0].timestamp);
+  }, [sortedCommunications]);
+
+  // Count messages by direction
+  const messageStats = useMemo(() => {
+    const sent = sortedCommunications.filter((c) => c.direction === "out").length;
+    const received = sortedCommunications.filter((c) => c.direction === "in").length;
+    return { sent, received };
+  }, [sortedCommunications]);
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    if (threadEndRef.current) {
+      threadEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [sortedCommunications.length]);
+
+  // Handle escape key to close modal
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    if (isOpen) {
+      document.addEventListener("keydown", handleEscape);
+      document.body.style.overflow = "hidden";
+    }
+    return () => {
+      document.removeEventListener("keydown", handleEscape);
+      document.body.style.overflow = "";
+    };
+  }, [isOpen, onClose]);
+
+  // Handle sending email
+  const handleSend = async (data: {
+    to: string;
+    cc?: string;
+    bcc?: string;
+    subject: string;
+    body: string;
+    attachments?: EmailAttachment[];
+  }) => {
+    await sendEmail.mutateAsync({
+      clientId: client.id,
+      ...data,
+      bodyFormat: "html",
+    });
+    // Refetch communications after sending
+    refetch();
+  };
+
+  if (!isOpen) return null;
+
+  // Get status badge info
+  const getStatusBadge = () => {
+    switch (client.status) {
+      case "awaiting_response":
+        return { label: "Awaiting Response", color: "bg-blue-100 text-blue-700" };
+      case "in_communication":
+        return { label: "In Communication", color: "bg-green-100 text-green-700" };
+      case "follow_up_due":
+        return { label: "Follow-up Due", color: "bg-amber-100 text-amber-700" };
+      case "no_contact_ok_close":
+        return { label: "No Contact - OK to Close", color: "bg-red-100 text-red-700" };
+      case "pending_outreach":
+        return { label: "Pending Outreach", color: "bg-purple-100 text-purple-700" };
+      default:
+        return { label: client.status, color: "bg-gray-100 text-gray-700" };
+    }
+  };
+
+  const statusBadge = getStatusBadge();
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+      />
+
+      {/* Modal */}
+      <div className="relative bg-white w-[95vw] h-[90vh] max-w-7xl rounded-xl shadow-2xl flex flex-col overflow-hidden">
+        {/* Modal Header */}
+        <div className="px-6 py-4 border-b bg-white flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center text-purple-700 font-semibold text-lg">
+                {client.firstName[0]}
+                {client.lastName[0]}
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  {client.firstName} {client.lastName}
+                </h2>
+                <div className="flex items-center gap-3 text-sm text-gray-500">
+                  <span className="flex items-center gap-1">
+                    <Mail className="w-3.5 h-3.5" />
+                    {client.email}
+                  </span>
+                  {client.phone && (
+                    <span className="flex items-center gap-1">
+                      <Phone className="w-3.5 h-3.5" />
+                      {client.phone}
+                    </span>
+                  )}
+                  <span className={cn("px-2 py-0.5 rounded text-xs font-medium", statusBadge.color)}>
+                    {statusBadge.label}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/clients/${client.id}`}
+              className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg flex items-center gap-2 transition-colors"
+            >
+              <ExternalLink className="w-4 h-4" />
+              View Full Profile
+            </Link>
+          </div>
+        </div>
+
+        {/* Main Content - Two Column Layout */}
+        <div className="flex flex-1 overflow-hidden">
+          {/* Left: Message Thread */}
+          <div className="flex-1 flex flex-col border-r min-w-0">
+            {/* Thread Header */}
+            <div className="px-6 py-3 border-b bg-gray-50 flex items-center justify-between flex-shrink-0">
+              <div>
+                <h3 className="font-medium text-gray-900">Email Thread</h3>
+                <p className="text-sm text-gray-500">
+                  {sortedCommunications.length} message
+                  {sortedCommunications.length !== 1 ? "s" : ""}
+                  {threadStartDate && <> &bull; Started {formatDate(threadStartDate)}</>}
+                </p>
+              </div>
+              <button
+                onClick={() => refetch()}
+                disabled={isFetching}
+                className="px-3 py-1.5 text-sm text-gray-600 bg-white border rounded-lg hover:bg-gray-50 flex items-center gap-1 transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={cn("w-4 h-4", isFetching && "animate-spin")} />
+                Refresh
+              </button>
+            </div>
+
+            {/* Messages Area */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50">
+              {isLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <RefreshCw className="w-6 h-6 text-gray-400 animate-spin" />
+                </div>
+              ) : sortedCommunications.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-center">
+                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                    <Mail className="w-8 h-8 text-gray-400" />
+                  </div>
+                  <h4 className="font-medium text-gray-900 mb-1">No emails yet</h4>
+                  <p className="text-sm text-gray-500 max-w-sm">
+                    Start the conversation by composing an email using the form on the right.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {sortedCommunications.map((communication) => (
+                    <MessageCard key={communication.id} communication={communication} />
+                  ))}
+                  <div ref={threadEndRef} />
+
+                  {/* Waiting indicator if last message was outgoing */}
+                  {sortedCommunications.length > 0 &&
+                    sortedCommunications[sortedCommunications.length - 1].direction === "out" && (
+                      <div className="flex items-center gap-3 py-3 px-4 bg-white rounded-lg border">
+                        <div className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
+                        <span className="text-sm text-gray-600">Waiting for client response...</span>
+                      </div>
+                    )}
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Right: Compose Panel */}
+          <div className="w-[480px] flex flex-col bg-white flex-shrink-0">
+            <div className="px-6 py-3 border-b bg-gray-50 flex-shrink-0">
+              <h3 className="font-medium text-gray-900">Compose Reply</h3>
+            </div>
+
+            {/* Compose Form - Scrollable */}
+            <div className="flex-1 overflow-y-auto">
+              <ReplyComposer
+                client={client}
+                communications={sortedCommunications}
+                onSend={handleSend}
+                onOpenAvailabilityModal={onOpenAvailabilityModal}
+                selectedAvailability={selectedAvailability}
+                onClearAvailability={onClearAvailability}
+                isSending={sendEmail.isPending}
+                compact
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Message Card component for the full modal view (more detailed than MessageBubble)
+function MessageCard({ communication }: { communication: Communication }) {
+  const isOutgoing = communication.direction === "out";
+  const timestamp = new Date(communication.timestamp);
+
+  // Determine the label based on direction and context
+  const getMessageLabel = () => {
+    if (isOutgoing) {
+      const subject = communication.subject?.toLowerCase() || "";
+      if (subject.includes("initial") || subject.includes("outreach")) {
+        return "Initial Outreach";
+      }
+      if (subject.includes("follow-up") || subject.includes("follow up")) {
+        return "Follow-up";
+      }
+      if (subject.startsWith("re:")) {
+        return "Reply";
+      }
+      return "Sent";
+    }
+    return "Client Reply";
+  };
+
+  // Strip HTML tags safely
+  const stripHtmlTags = (html: string): string => {
+    let text = html
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
+    text = text.replace(/<[^>]*>/g, "");
+    text = text.replace(/\s+/g, " ").trim();
+    return text;
+  };
+
+  const getDisplayContent = () => {
+    const content = communication.fullBody || communication.bodyPreview;
+    if (!content) return "";
+    if (content.includes("<") && content.includes(">")) {
+      return stripHtmlTags(content);
+    }
+    return content;
+  };
+
+  const formatDateTime = (date: Date) => {
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }) + " @ " + date.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  };
+
+  return (
+    <div
+      className={cn(
+        "rounded-xl overflow-hidden border",
+        isOutgoing
+          ? "bg-gradient-to-br from-purple-50 to-indigo-50 border-purple-100"
+          : "bg-white border-gray-200"
+      )}
+    >
+      {/* Card Header */}
+      <div
+        className={cn(
+          "px-4 py-3 border-b flex items-center justify-between",
+          isOutgoing ? "border-purple-100" : "border-gray-100"
+        )}
+      >
+        <div className="flex items-center gap-3">
+          <div
+            className={cn(
+              "w-8 h-8 rounded-full flex items-center justify-center",
+              isOutgoing ? "bg-purple-600" : "bg-green-500"
+            )}
+          >
+            {isOutgoing ? (
+              <CheckCircle className="w-4 h-4 text-white" />
+            ) : (
+              <Mail className="w-4 h-4 text-white" />
+            )}
+          </div>
+          <div>
+            <span
+              className={cn(
+                "font-medium",
+                isOutgoing ? "text-purple-900" : "text-gray-900"
+              )}
+            >
+              {getMessageLabel()}
+            </span>
+            <span
+              className={cn(
+                "text-sm ml-2",
+                isOutgoing ? "text-purple-600" : "text-green-600"
+              )}
+            >
+              {isOutgoing ? "Sent" : "Received"}
+            </span>
+          </div>
+        </div>
+        <span className="text-sm text-gray-500">{formatDateTime(timestamp)}</span>
+      </div>
+
+      {/* Card Body */}
+      <div className="p-4">
+        {communication.subject && (
+          <p className="font-medium text-gray-900 mb-2">{communication.subject}</p>
+        )}
+        <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+          {getDisplayContent()}
+        </div>
+      </div>
+
+      {/* Card Footer */}
+      <div
+        className={cn(
+          "px-4 py-2 text-xs",
+          isOutgoing ? "text-purple-600" : "text-gray-500"
+        )}
+      >
+        {isOutgoing
+          ? `Sent by ${communication.sentBy || "staff"}`
+          : `From ${communication.sentBy || "client"}`}
+      </div>
+    </div>
+  );
+}

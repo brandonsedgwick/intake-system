@@ -33,6 +33,7 @@ interface ReplyComposerProps {
   selectedAvailability: string[];
   onClearAvailability: () => void;
   isSending?: boolean;
+  compact?: boolean; // For modal view - always expanded, no collapse state
 }
 
 export function ReplyComposer({
@@ -43,6 +44,7 @@ export function ReplyComposer({
   selectedAvailability,
   onClearAvailability,
   isSending = false,
+  compact = false,
 }: ReplyComposerProps) {
   // Get templates
   const { data: templates } = useEmailTemplates();
@@ -233,8 +235,8 @@ export function ReplyComposer({
     setIsExpanded(false);
   };
 
-  // Collapsed view
-  if (!isExpanded) {
+  // Collapsed view (not shown in compact mode)
+  if (!isExpanded && !compact) {
     return (
       <div className="border-t bg-gray-50 px-6 py-4">
         <div className="flex items-center gap-3">
@@ -270,16 +272,21 @@ export function ReplyComposer({
   }
 
   return (
-    <div className="border-t bg-gray-50 p-6">
-      {/* Composer Header */}
-      <div className="flex items-center justify-between mb-4">
-        <h4 className="font-medium text-gray-900">Compose Reply</h4>
-        <div className="flex items-center gap-2">
+    <div className={cn(compact ? "p-6" : "border-t bg-gray-50 p-6")}>
+      {/* Composer Header with Quick Actions */}
+      <div className={cn("flex items-center justify-between", compact ? "mb-4" : "mb-4")}>
+        {!compact && <h4 className="font-medium text-gray-900">Compose Reply</h4>}
+        <div className={cn("flex items-center gap-2", compact && "w-full")}>
           {/* Template Dropdown */}
           <div className="relative" ref={dropdownRef}>
             <button
               onClick={() => setTemplateDropdownOpen(!templateDropdownOpen)}
-              className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border rounded-lg hover:bg-gray-50 flex items-center gap-2"
+              className={cn(
+                "text-sm font-medium rounded-lg flex items-center gap-2 transition-colors",
+                compact
+                  ? "px-4 py-2 bg-white border text-gray-700 hover:bg-gray-50"
+                  : "px-3 py-1.5 text-gray-700 bg-white border hover:bg-gray-50"
+              )}
             >
               <FileEdit className="w-4 h-4" />
               Use Template
@@ -287,7 +294,7 @@ export function ReplyComposer({
             </button>
 
             {templateDropdownOpen && (
-              <div className="absolute right-0 mt-1 w-72 bg-white border rounded-lg shadow-lg z-20 max-h-96 overflow-hidden">
+              <div className="absolute left-0 mt-1 w-72 bg-white border rounded-lg shadow-lg z-20 max-h-96 overflow-hidden">
                 {/* Search */}
                 <div className="p-2 border-b">
                   <div className="relative">
@@ -383,7 +390,10 @@ export function ReplyComposer({
           {/* Offer Availability Button */}
           <button
             onClick={onOpenAvailabilityModal}
-            className="px-3 py-1.5 text-sm font-medium text-purple-700 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 flex items-center gap-2"
+            className={cn(
+              "text-sm font-medium text-purple-700 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 flex items-center gap-2 transition-colors",
+              compact ? "px-4 py-2" : "px-3 py-1.5"
+            )}
           >
             <Calendar className="w-4 h-4" />
             Offer Availability

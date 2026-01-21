@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Client Communications - Layout Ideas</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .idea-section { min-height: 100vh; border-bottom: 8px solid #7c3aed; }
+    .message-bubble-out { background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%); }
+    .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+    .scrollbar-thin::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+  </style>
+</head>
+<body class="bg-gray-100">
+
+  <!-- Navigation between ideas -->
+  <nav class="fixed top-0 left-0 right-0 bg-white shadow-lg z-50 px-6 py-4">
+    <div class="max-w-7xl mx-auto flex items-center justify-between">
+      <h1 class="text-xl font-bold text-gray-900">Client Communications - Layout Ideas</h1>
+      <div class="flex gap-4">
+        <a href="#idea1" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">Idea 1: Slide-out Panel</a>
+        <a href="#idea2" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">Idea 2: Full Modal</a>
+        <a href="#idea3" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">Idea 3: Split View</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ============================================================ -->
+  <!-- IDEA 1: SLIDE-OUT PANEL (Like Gmail/Slack) -->
+  <!-- ============================================================ -->
+  <section id="idea1" class="idea-section pt-24 px-6 pb-12">
+    <div class="max-w-7xl mx-auto">
+      <div class="mb-8">
+        <h2 class="text-3xl font-bold text-gray-900 mb-2">Idea 1: Slide-out Panel</h2>
+        <p class="text-gray-600 max-w-3xl">
+          A slide-out panel that appears from the right side when you click "Open Communications" on any client.
+          The main outreach dashboard remains visible but dimmed. Panel can be resized or closed.
+          <strong>Similar to: Gmail compose, Slack threads, Intercom</strong>
+        </p>
+      </div>
+
+      <!-- Simulated Dashboard with Slide-out -->
+      <div class="relative bg-white rounded-xl shadow-xl overflow-hidden" style="height: 700px;">
+
+        <!-- Main Dashboard (dimmed when panel open) -->
+        <div class="absolute inset-0 bg-black/20 z-10"></div>
+
+        <!-- Dashboard Content Preview -->
+        <div class="p-6">
+          <div class="flex items-center justify-between mb-6">
+            <h3 class="text-xl font-semibold">Outreach Queue</h3>
+            <div class="flex gap-2">
+              <span class="px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-sm">3 Pending</span>
+              <span class="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm">2 Awaiting</span>
+            </div>
+          </div>
+
+          <!-- Table Preview -->
+          <table class="w-full">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="px-4 py-3 text-left text-sm font-medium text-gray-600">Client</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-gray-600">Status</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-gray-600">Next Action</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-gray-600">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="border-b bg-purple-50">
+                <td class="px-4 py-4">
+                  <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-purple-200 rounded-full flex items-center justify-center text-purple-700 font-medium">HM</div>
+                    <div>
+                      <p class="font-medium">Hannah Montana</p>
+                      <p class="text-sm text-gray-500">hannah@email.com</p>
+                    </div>
+                  </div>
+                </td>
+                <td class="px-4 py-4"><span class="px-2 py-1 bg-blue-100 text-blue-700 rounded text-sm">Awaiting Response</span></td>
+                <td class="px-4 py-4 text-sm text-gray-600">Follow-up #1 due tomorrow</td>
+                <td class="px-4 py-4">
+                  <button class="px-3 py-1.5 bg-purple-600 text-white rounded-lg text-sm">Open Communications</button>
+                </td>
+              </tr>
+              <tr class="border-b">
+                <td class="px-4 py-4">
+                  <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center text-gray-600 font-medium">JS</div>
+                    <div>
+                      <p class="font-medium">John Smith</p>
+                      <p class="text-sm text-gray-500">john.s@email.com</p>
+                    </div>
+                  </div>
+                </td>
+                <td class="px-4 py-4"><span class="px-2 py-1 bg-amber-100 text-amber-700 rounded text-sm">Pending Outreach</span></td>
+                <td class="px-4 py-4 text-sm text-gray-600">Initial outreach needed</td>
+                <td class="px-4 py-4">
+                  <button class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm">Open Communications</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- SLIDE-OUT PANEL -->
+        <div class="absolute top-0 right-0 bottom-0 w-[500px] bg-white shadow-2xl z-20 flex flex-col border-l">
+
+          <!-- Panel Header -->
+          <div class="px-6 py-4 border-b bg-gradient-to-r from-purple-600 to-indigo-600 text-white">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center font-medium">HM</div>
+                <div>
+                  <h3 class="font-semibold">Hannah Montana</h3>
+                  <p class="text-sm text-purple-200">hannah@email.com</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <button class="p-2 hover:bg-white/10 rounded-lg" title="Expand to full screen">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
+                  </svg>
+                </button>
+                <button class="p-2 hover:bg-white/10 rounded-lg" title="Close">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Actions Bar -->
+          <div class="px-4 py-3 border-b bg-gray-50 flex items-center gap-2">
+            <button class="px-3 py-1.5 text-sm bg-white border rounded-lg hover:bg-gray-50 flex items-center gap-1">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+              </svg>
+              Templates
+            </button>
+            <button class="px-3 py-1.5 text-sm bg-white border rounded-lg hover:bg-gray-50 flex items-center gap-1">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+              </svg>
+              Availability
+            </button>
+            <div class="flex-1"></div>
+            <button class="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 flex items-center gap-1">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+              </svg>
+              Refresh
+            </button>
+          </div>
+
+          <!-- Messages Area -->
+          <div class="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 scrollbar-thin">
+            <!-- Outgoing Message -->
+            <div class="flex justify-end">
+              <div class="max-w-[85%]">
+                <div class="flex items-center gap-2 justify-end mb-1">
+                  <span class="text-xs text-gray-500">Jan 20 @ 8:09 PM</span>
+                  <span class="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded">Initial Outreach</span>
+                </div>
+                <div class="message-bubble-out text-white rounded-2xl rounded-tr-md px-4 py-3">
+                  <p class="font-medium mb-2">Appointment Availability - Serenity Therapy</p>
+                  <p class="text-sm text-white/90">Hi Hannah, Thank you for reaching out to Serenity Therapy. We have availability for new clients and would love to help you get started...</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Compose Area -->
+          <div class="border-t bg-white p-4">
+            <div class="mb-3">
+              <input type="text" value="Re: Appointment Availability - Serenity Therapy" class="w-full px-3 py-2 text-sm border rounded-lg bg-gray-50"/>
+            </div>
+            <div class="border rounded-lg overflow-hidden mb-3">
+              <div class="flex items-center gap-1 px-2 py-1.5 bg-gray-50 border-b">
+                <button class="p-1.5 hover:bg-gray-200 rounded"><strong>B</strong></button>
+                <button class="p-1.5 hover:bg-gray-200 rounded"><em>I</em></button>
+                <button class="p-1.5 hover:bg-gray-200 rounded">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+                  </svg>
+                </button>
+              </div>
+              <textarea rows="3" placeholder="Type your message..." class="w-full px-3 py-2 text-sm focus:outline-none resize-none"></textarea>
+            </div>
+            <div class="flex items-center justify-between">
+              <button class="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg flex items-center gap-1">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
+                </svg>
+                Attach
+              </button>
+              <button class="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                </svg>
+                Send Reply
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pros/Cons -->
+      <div class="mt-8 grid grid-cols-2 gap-6">
+        <div class="bg-green-50 rounded-xl p-6">
+          <h4 class="font-semibold text-green-800 mb-3 flex items-center gap-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+            Pros
+          </h4>
+          <ul class="space-y-2 text-green-700 text-sm">
+            <li>• Dashboard stays visible - easy to switch between clients</li>
+            <li>• Familiar pattern (Gmail, Slack, Intercom)</li>
+            <li>• Can resize panel width if needed</li>
+            <li>• Quick access without losing context</li>
+            <li>• Can expand to full modal if needed</li>
+          </ul>
+        </div>
+        <div class="bg-red-50 rounded-xl p-6">
+          <h4 class="font-semibold text-red-800 mb-3 flex items-center gap-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            Cons
+          </h4>
+          <ul class="space-y-2 text-red-700 text-sm">
+            <li>• Limited width for long email content</li>
+            <li>• May feel cramped on smaller screens</li>
+            <li>• Rich text editor compressed</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- IDEA 2: FULL-SCREEN MODAL (Like email clients) -->
+  <!-- ============================================================ -->
+  <section id="idea2" class="idea-section pt-24 px-6 pb-12 bg-gray-50">
+    <div class="max-w-7xl mx-auto">
+      <div class="mb-8">
+        <h2 class="text-3xl font-bold text-gray-900 mb-2">Idea 2: Full-Screen Modal</h2>
+        <p class="text-gray-600 max-w-3xl">
+          A full-screen modal that takes over the entire view when opened. Provides maximum space for
+          reading and composing emails. Has a dedicated layout optimized for email communication.
+          <strong>Similar to: Outlook compose, HubSpot email, Zendesk tickets</strong>
+        </p>
+      </div>
+
+      <!-- Full Screen Modal Mockup -->
+      <div class="bg-white rounded-xl shadow-2xl overflow-hidden" style="height: 750px;">
+
+        <!-- Modal Header -->
+        <div class="px-6 py-4 border-b bg-white flex items-center justify-between">
+          <div class="flex items-center gap-4">
+            <button class="p-2 hover:bg-gray-100 rounded-lg text-gray-600">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+              </svg>
+            </button>
+            <div class="flex items-center gap-3">
+              <div class="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center text-purple-700 font-semibold text-lg">HM</div>
+              <div>
+                <h2 class="text-lg font-semibold text-gray-900">Hannah Montana</h2>
+                <div class="flex items-center gap-3 text-sm text-gray-500">
+                  <span>hannah@email.com</span>
+                  <span>•</span>
+                  <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded">Awaiting Response</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg flex items-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+              </svg>
+              View Full Profile
+            </button>
+            <button class="p-2 hover:bg-gray-100 rounded-lg text-gray-600">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Main Content - Two Column Layout -->
+        <div class="flex h-[calc(100%-73px)]">
+
+          <!-- Left: Message Thread -->
+          <div class="flex-1 flex flex-col border-r">
+            <!-- Thread Header -->
+            <div class="px-6 py-3 border-b bg-gray-50 flex items-center justify-between">
+              <div>
+                <h3 class="font-medium text-gray-900">Email Thread</h3>
+                <p class="text-sm text-gray-500">1 message • Started Jan 20, 2026</p>
+              </div>
+              <button class="px-3 py-1.5 text-sm text-gray-600 bg-white border rounded-lg hover:bg-gray-50 flex items-center gap-1">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                Refresh
+              </button>
+            </div>
+
+            <!-- Messages -->
+            <div class="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50 scrollbar-thin">
+              <!-- Outgoing Message - Full Width Card Style -->
+              <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
+                <div class="px-4 py-3 bg-purple-50 border-b border-purple-100 flex items-center justify-between">
+                  <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center">
+                      <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                      </svg>
+                    </div>
+                    <div>
+                      <span class="font-medium text-purple-900">Initial Outreach</span>
+                      <span class="text-purple-600 text-sm ml-2">Sent</span>
+                    </div>
+                  </div>
+                  <span class="text-sm text-purple-600">Jan 20, 2026 @ 8:09 PM</span>
+                </div>
+                <div class="p-4">
+                  <p class="font-medium text-gray-900 mb-2">Appointment Availability - Serenity Therapy</p>
+                  <div class="text-gray-700 text-sm leading-relaxed">
+                    <p>Hi Hannah,</p>
+                    <br>
+                    <p>Thank you for reaching out to Serenity Therapy. We have availability for new clients and would love to help you get started on your wellness journey.</p>
+                    <br>
+                    <p>Here are some available appointment times:</p>
+                    <ul class="list-disc ml-6 my-2">
+                      <li>Monday, Jan 27 @ 2:00 PM</li>
+                      <li>Wednesday, Jan 29 @ 10:00 AM</li>
+                      <li>Friday, Jan 31 @ 3:00 PM</li>
+                    </ul>
+                    <p>Please let us know which time works best for you, or if you'd like to see other options.</p>
+                    <br>
+                    <p>Best regards,<br>Serenity Therapy Team</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Placeholder for more messages -->
+              <div class="text-center py-8 text-gray-400">
+                <p class="text-sm">Waiting for client response...</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Compose Panel -->
+          <div class="w-[480px] flex flex-col bg-white">
+            <div class="px-6 py-3 border-b bg-gray-50">
+              <h3 class="font-medium text-gray-900">Compose Reply</h3>
+            </div>
+
+            <!-- Compose Form -->
+            <div class="flex-1 overflow-y-auto p-6">
+              <!-- Quick Actions -->
+              <div class="flex gap-2 mb-4">
+                <button class="px-3 py-2 text-sm bg-purple-50 text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-100 flex items-center gap-1">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                  </svg>
+                  Use Template
+                </button>
+                <button class="px-3 py-2 text-sm bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 flex items-center gap-1">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                  </svg>
+                  Offer Availability
+                </button>
+              </div>
+
+              <!-- To Field -->
+              <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">To</label>
+                <input type="email" value="hannah@email.com" class="w-full px-3 py-2 border rounded-lg bg-gray-50 text-gray-700" readonly/>
+              </div>
+
+              <!-- Subject Field -->
+              <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+                <input type="text" value="Re: Appointment Availability - Serenity Therapy" class="w-full px-3 py-2 border rounded-lg"/>
+              </div>
+
+              <!-- CC/BCC -->
+              <button class="text-sm text-purple-600 hover:text-purple-800 mb-4">+ Add CC/BCC</button>
+
+              <!-- Rich Text Editor -->
+              <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Message</label>
+                <div class="border rounded-lg overflow-hidden">
+                  <div class="flex items-center gap-1 px-3 py-2 bg-gray-50 border-b">
+                    <button class="p-1.5 hover:bg-gray-200 rounded font-bold">B</button>
+                    <button class="p-1.5 hover:bg-gray-200 rounded italic">I</button>
+                    <div class="w-px h-5 bg-gray-300 mx-1"></div>
+                    <button class="p-1.5 hover:bg-gray-200 rounded">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h7"/>
+                      </svg>
+                    </button>
+                    <button class="p-1.5 hover:bg-gray-200 rounded">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+                      </svg>
+                    </button>
+                  </div>
+                  <textarea rows="8" placeholder="Type your message..." class="w-full px-3 py-3 focus:outline-none resize-none"></textarea>
+                </div>
+              </div>
+
+              <!-- Attachments -->
+              <div class="mb-4">
+                <button class="px-3 py-2 text-sm text-gray-600 border border-dashed rounded-lg hover:bg-gray-50 w-full flex items-center justify-center gap-2">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
+                  </svg>
+                  Add Attachment
+                </button>
+              </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="px-6 py-4 border-t bg-gray-50 flex items-center justify-between">
+              <button class="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg">Preview</button>
+              <div class="flex items-center gap-2">
+                <button class="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg">Cancel</button>
+                <button class="px-6 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 flex items-center gap-2">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                  </svg>
+                  Send Reply
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pros/Cons -->
+      <div class="mt-8 grid grid-cols-2 gap-6">
+        <div class="bg-green-50 rounded-xl p-6">
+          <h4 class="font-semibold text-green-800 mb-3 flex items-center gap-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+            Pros
+          </h4>
+          <ul class="space-y-2 text-green-700 text-sm">
+            <li>• Maximum space for reading and writing emails</li>
+            <li>• Clean separation between thread and compose</li>
+            <li>• Professional email client feel</li>
+            <li>• Full message content visible at once</li>
+            <li>• Rich text editor has proper space</li>
+          </ul>
+        </div>
+        <div class="bg-red-50 rounded-xl p-6">
+          <h4 class="font-semibold text-red-800 mb-3 flex items-center gap-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            Cons
+          </h4>
+          <ul class="space-y-2 text-red-700 text-sm">
+            <li>• Loses context of other clients/dashboard</li>
+            <li>• Extra click to get back to dashboard</li>
+            <li>• Can feel like leaving the app</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- IDEA 3: EXPANDABLE SPLIT VIEW -->
+  <!-- ============================================================ -->
+  <section id="idea3" class="idea-section pt-24 px-6 pb-12">
+    <div class="max-w-7xl mx-auto">
+      <div class="mb-8">
+        <h2 class="text-3xl font-bold text-gray-900 mb-2">Idea 3: Expandable Split View</h2>
+        <p class="text-gray-600 max-w-3xl">
+          Keep the current tab-based approach but make the communications section expandable.
+          Click "Expand" to take over the full right pane. Collapsible sections for thread vs compose.
+          <strong>Similar to: Notion, Linear, modern SaaS tools</strong>
+        </p>
+      </div>
+
+      <!-- Split View Mockup -->
+      <div class="bg-gray-100 rounded-xl shadow-xl overflow-hidden" style="height: 750px;">
+        <div class="flex h-full">
+
+          <!-- Left: Client List (Narrow) -->
+          <div class="w-[280px] bg-white border-r flex flex-col">
+            <div class="p-4 border-b">
+              <h3 class="font-semibold text-gray-900">Outreach Queue</h3>
+              <p class="text-sm text-gray-500">5 clients</p>
+            </div>
+            <div class="flex-1 overflow-y-auto">
+              <!-- Selected Client -->
+              <div class="p-3 bg-purple-50 border-l-4 border-purple-600 cursor-pointer">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 bg-purple-200 rounded-full flex items-center justify-center text-purple-700 font-medium">HM</div>
+                  <div class="flex-1 min-w-0">
+                    <p class="font-medium text-gray-900 truncate">Hannah Montana</p>
+                    <p class="text-xs text-gray-500 truncate">Awaiting Response</p>
+                  </div>
+                </div>
+              </div>
+              <!-- Other Clients -->
+              <div class="p-3 hover:bg-gray-50 cursor-pointer border-b">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center text-gray-600 font-medium">JS</div>
+                  <div class="flex-1 min-w-0">
+                    <p class="font-medium text-gray-900 truncate">John Smith</p>
+                    <p class="text-xs text-gray-500 truncate">Pending Outreach</p>
+                  </div>
+                </div>
+              </div>
+              <div class="p-3 hover:bg-gray-50 cursor-pointer border-b">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center text-gray-600 font-medium">EJ</div>
+                  <div class="flex-1 min-w-0">
+                    <p class="font-medium text-gray-900 truncate">Emily Johnson</p>
+                    <p class="text-xs text-gray-500 truncate">Follow-up Due</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Expanded Communications View -->
+          <div class="flex-1 flex flex-col bg-white">
+
+            <!-- Header with client info and expand/collapse -->
+            <div class="px-6 py-4 border-b flex items-center justify-between bg-white">
+              <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center text-purple-700 font-semibold text-lg">HM</div>
+                <div>
+                  <h2 class="text-lg font-semibold text-gray-900">Hannah Montana</h2>
+                  <div class="flex items-center gap-2 text-sm text-gray-500">
+                    <span>hannah@email.com</span>
+                    <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">Awaiting Response</span>
+                  </div>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <button class="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg flex items-center gap-1">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                  </svg>
+                  Full Profile
+                </button>
+                <button class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Quick Stats Row -->
+            <div class="px-6 py-3 border-b bg-gray-50 flex items-center gap-6">
+              <div class="flex items-center gap-2">
+                <div class="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                  <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                  </svg>
+                </div>
+                <div>
+                  <p class="text-xs text-gray-500">Outreach Sent</p>
+                  <p class="text-sm font-medium">1 of 3</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <div class="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center">
+                  <svg class="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  </svg>
+                </div>
+                <div>
+                  <p class="text-xs text-gray-500">Next Follow-up</p>
+                  <p class="text-sm font-medium">Tomorrow</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <div class="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                  </svg>
+                </div>
+                <div>
+                  <p class="text-xs text-gray-500">Messages</p>
+                  <p class="text-sm font-medium">1 sent, 0 received</p>
+                </div>
+              </div>
+              <div class="flex-1"></div>
+              <button class="px-3 py-1.5 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-1">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                </svg>
+                Process Follow-up #1
+              </button>
+            </div>
+
+            <!-- Main Content: Collapsible Sections -->
+            <div class="flex-1 overflow-y-auto">
+
+              <!-- Email Thread Section (Collapsible) -->
+              <div class="border-b">
+                <button class="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50">
+                  <div class="flex items-center gap-3">
+                    <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                    <h3 class="font-semibold text-gray-900">Email Thread</h3>
+                    <span class="text-sm text-gray-500">1 message</span>
+                  </div>
+                  <span class="text-sm text-gray-500">Started Jan 20, 2026</span>
+                </button>
+
+                <!-- Expanded Thread Content -->
+                <div class="px-6 pb-6 space-y-4">
+                  <!-- Message Card -->
+                  <div class="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl p-4 border border-purple-100">
+                    <div class="flex items-center justify-between mb-3">
+                      <div class="flex items-center gap-2">
+                        <span class="px-2 py-1 bg-purple-600 text-white text-xs rounded font-medium">SENT</span>
+                        <span class="text-sm font-medium text-gray-900">Initial Outreach</span>
+                      </div>
+                      <span class="text-sm text-gray-500">Jan 20, 2026 @ 8:09 PM</span>
+                    </div>
+                    <p class="font-medium text-gray-900 mb-2">Appointment Availability - Serenity Therapy</p>
+                    <p class="text-sm text-gray-600 line-clamp-3">Hi Hannah, Thank you for reaching out to Serenity Therapy. We have availability for new clients and would love to help you get started on your wellness journey...</p>
+                    <button class="mt-2 text-sm text-purple-600 hover:text-purple-800">Read full email →</button>
+                  </div>
+
+                  <!-- Waiting indicator -->
+                  <div class="flex items-center gap-3 py-3 px-4 bg-gray-50 rounded-lg">
+                    <div class="w-2 h-2 bg-amber-400 rounded-full animate-pulse"></div>
+                    <span class="text-sm text-gray-600">Waiting for client response...</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Quick Reply Section (Collapsible) -->
+              <div class="border-b">
+                <button class="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50">
+                  <div class="flex items-center gap-3">
+                    <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                    <h3 class="font-semibold text-gray-900">Compose Reply</h3>
+                  </div>
+                </button>
+
+                <!-- Expanded Compose Content -->
+                <div class="px-6 pb-6">
+                  <!-- Quick Actions -->
+                  <div class="flex gap-2 mb-4">
+                    <button class="px-4 py-2 text-sm bg-white border rounded-lg hover:bg-gray-50 flex items-center gap-2">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                      </svg>
+                      Use Template
+                    </button>
+                    <button class="px-4 py-2 text-sm bg-white border rounded-lg hover:bg-gray-50 flex items-center gap-2">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                      </svg>
+                      Offer Availability
+                    </button>
+                  </div>
+
+                  <!-- Compact Compose Form -->
+                  <div class="bg-white border rounded-xl overflow-hidden">
+                    <div class="px-4 py-3 border-b bg-gray-50 flex items-center gap-4">
+                      <span class="text-sm text-gray-500">To:</span>
+                      <span class="text-sm font-medium">hannah@email.com</span>
+                      <span class="text-sm text-gray-500 ml-auto">Subject:</span>
+                      <input type="text" value="Re: Appointment Availability" class="flex-1 text-sm border-none bg-transparent focus:outline-none"/>
+                    </div>
+                    <div class="flex items-center gap-1 px-3 py-2 border-b">
+                      <button class="p-1.5 hover:bg-gray-100 rounded font-bold text-sm">B</button>
+                      <button class="p-1.5 hover:bg-gray-100 rounded italic text-sm">I</button>
+                      <button class="p-1.5 hover:bg-gray-100 rounded text-sm">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h7"/>
+                        </svg>
+                      </button>
+                      <div class="w-px h-5 bg-gray-200 mx-1"></div>
+                      <button class="p-1.5 hover:bg-gray-100 rounded text-sm">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
+                        </svg>
+                      </button>
+                    </div>
+                    <textarea rows="4" placeholder="Type your message..." class="w-full px-4 py-3 focus:outline-none resize-none text-sm"></textarea>
+                    <div class="px-4 py-3 border-t bg-gray-50 flex items-center justify-end gap-2">
+                      <button class="px-4 py-2 text-sm text-gray-600 hover:bg-gray-200 rounded-lg">Cancel</button>
+                      <button class="px-6 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                        </svg>
+                        Send
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Client Details Section (Collapsed) -->
+              <div>
+                <button class="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50">
+                  <div class="flex items-center gap-3">
+                    <svg class="w-5 h-5 text-gray-400 -rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                    <h3 class="font-medium text-gray-700">Client Details</h3>
+                    <span class="text-sm text-gray-500">Insurance, preferences, notes...</span>
+                  </div>
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pros/Cons -->
+      <div class="mt-8 grid grid-cols-2 gap-6">
+        <div class="bg-green-50 rounded-xl p-6">
+          <h4 class="font-semibold text-green-800 mb-3 flex items-center gap-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+            Pros
+          </h4>
+          <ul class="space-y-2 text-green-700 text-sm">
+            <li>• Client list always visible for quick switching</li>
+            <li>• Collapsible sections let user control what's visible</li>
+            <li>• Quick stats give context at a glance</li>
+            <li>• Modern, familiar accordion pattern</li>
+            <li>• Can show/hide compose as needed</li>
+          </ul>
+        </div>
+        <div class="bg-red-50 rounded-xl p-6">
+          <h4 class="font-semibold text-red-800 mb-3 flex items-center gap-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            Cons
+          </h4>
+          <ul class="space-y-2 text-red-700 text-sm">
+            <li>• Loses the table view of all clients</li>
+            <li>• More clicks to expand/collapse sections</li>
+            <li>• May need to scroll between sections</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Summary Section -->
+  <section class="py-16 px-6 bg-purple-50">
+    <div class="max-w-4xl mx-auto text-center">
+      <h2 class="text-3xl font-bold text-gray-900 mb-6">Summary & Recommendation</h2>
+
+      <div class="grid grid-cols-3 gap-6 mb-8">
+        <div class="bg-white rounded-xl p-6 shadow-sm">
+          <h3 class="font-semibold text-purple-600 mb-2">Idea 1: Slide-out</h3>
+          <p class="text-sm text-gray-600">Best for quick interactions while keeping dashboard visible</p>
+        </div>
+        <div class="bg-white rounded-xl p-6 shadow-sm border-2 border-purple-600">
+          <h3 class="font-semibold text-purple-600 mb-2">Idea 2: Full Modal ⭐</h3>
+          <p class="text-sm text-gray-600">Best for focused email work with maximum space</p>
+        </div>
+        <div class="bg-white rounded-xl p-6 shadow-sm">
+          <h3 class="font-semibold text-purple-600 mb-2">Idea 3: Split View</h3>
+          <p class="text-sm text-gray-600">Best balance of context and space</p>
+        </div>
+      </div>
+
+      <p class="text-gray-600 max-w-2xl mx-auto">
+        <strong>My recommendation:</strong> Idea 2 (Full Modal) provides the best experience for composing and reading emails.
+        The two-column layout with thread on left and compose on right is intuitive and gives proper space to both activities.
+        However, if staying in context is important, Idea 3 offers a nice compromise.
+      </p>
+    </div>
+  </section>
+
+</body>
+</html>
