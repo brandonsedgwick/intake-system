@@ -157,6 +157,38 @@ function getStatusInfo(client: Client): StatusInfo {
         isOverdue: false,
       };
     }
+    case "awaiting_response":
+      return {
+        icon: <Clock className="w-5 h-5" />,
+        color: "text-blue-600",
+        bgColor: "bg-blue-100",
+        label: "Awaiting Response",
+        isOverdue: false,
+      };
+    case "follow_up_due":
+      return {
+        icon: <AlertCircle className="w-5 h-5" />,
+        color: "text-amber-600",
+        bgColor: "bg-amber-100",
+        label: "Follow-up Due",
+        isOverdue: true,
+      };
+    case "in_communication":
+      return {
+        icon: <MessageCircle className="w-5 h-5" />,
+        color: "text-green-600",
+        bgColor: "bg-green-100",
+        label: "In Communication",
+        isOverdue: false,
+      };
+    case "no_contact_ok_close":
+      return {
+        icon: <XCircle className="w-5 h-5" />,
+        color: "text-red-600",
+        bgColor: "bg-red-100",
+        label: "No Contact - OK to Close",
+        isOverdue: false,
+      };
     default:
       return {
         icon: <Circle className="w-5 h-5" />,
@@ -283,13 +315,16 @@ function ClientRow({
   isSelected,
   onClick,
   onClose,
+  onOpenCommunications,
 }: {
   client: Client;
   isSelected: boolean;
   onClick: () => void;
   onClose: () => void;
+  onOpenCommunications?: () => void;
 }) {
   const statusInfo = getStatusInfo(client);
+  const isInCommunication = client.status === "in_communication";
 
   return (
     <div
@@ -316,13 +351,26 @@ function ClientRow({
         <div className="text-xs text-gray-500 truncate">{client.email}</div>
       </div>
 
-      {/* Status Badge */}
+      {/* Status Badge - Clickable for "In Communication" status */}
       <div className="flex-shrink-0 hidden sm:block">
-        <span
-          className={`text-xs px-2 py-1 rounded-full ${statusInfo.bgColor} ${statusInfo.color}`}
-        >
-          {statusInfo.label}
-        </span>
+        {isInCommunication && onOpenCommunications ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenCommunications();
+            }}
+            className={`text-xs px-2 py-1 rounded-full ${statusInfo.bgColor} ${statusInfo.color} hover:ring-2 hover:ring-green-300 transition-all cursor-pointer`}
+            title="Click to view communications"
+          >
+            {statusInfo.label}
+          </button>
+        ) : (
+          <span
+            className={`text-xs px-2 py-1 rounded-full ${statusInfo.bgColor} ${statusInfo.color}`}
+          >
+            {statusInfo.label}
+          </span>
+        )}
       </div>
 
       {/* Close Button */}
@@ -1432,6 +1480,8 @@ interface ReadingPaneProps {
   onEmailSent: () => void;
   onMoveToScheduling: () => void;
   onMoveToReferral: () => void;
+  openCommunicationsModal?: boolean;
+  onCommunicationsModalOpened?: () => void;
 }
 
 function ReadingPane({
@@ -1443,6 +1493,8 @@ function ReadingPane({
   onEmailSent,
   onMoveToScheduling,
   onMoveToReferral,
+  openCommunicationsModal,
+  onCommunicationsModalOpened,
 }: ReadingPaneProps) {
   const { data: allTemplates, isLoading: templatesLoading } = useTemplates();
   const previewMutation = usePreviewTemplate();
@@ -1485,6 +1537,18 @@ function ReadingPane({
 
   // Communications modal state
   const [showCommunicationsModal, setShowCommunicationsModal] = useState(false);
+  const prevOpenCommunicationsModal = useRef(openCommunicationsModal);
+
+  // Open communications modal when triggered from parent (prop changes from false to true)
+  useEffect(() => {
+    // Detect when prop changes from false/undefined to true
+    if (openCommunicationsModal && !prevOpenCommunicationsModal.current) {
+      setShowCommunicationsModal(true);
+      // Reset the parent trigger
+      onCommunicationsModalOpened?.();
+    }
+    prevOpenCommunicationsModal.current = openCommunicationsModal;
+  }, [openCommunicationsModal, onCommunicationsModalOpened]);
 
   // Filter templates to outreach types only
   const outreachTemplates = useMemo(() => {
@@ -3194,6 +3258,9 @@ export default function OutreachPage() {
   // Acceptance modal state
   const [acceptanceClient, setAcceptanceClient] = useState<Client | null>(null);
 
+  // Communications modal trigger - when true, ReadingPane should open communications modal
+  const [openCommunicationsForClient, setOpenCommunicationsForClient] = useState<string | null>(null);
+
   // Update client hook
   const updateClient = useUpdateClient();
   const createBookedSlot = useCreateBookedSlot();
@@ -3525,6 +3592,10 @@ export default function OutreachPage() {
                     isSelected={client.id === selectedClientId}
                     onClick={() => handleClientClick(client)}
                     onClose={() => handleCloseClick(client)}
+                    onOpenCommunications={() => {
+                      setSelectedClientId(client.id);
+                      setOpenCommunicationsForClient(client.id);
+                    }}
                   />
                 ))}
               </div>
@@ -3540,6 +3611,10 @@ export default function OutreachPage() {
               clients={outreachClients || []}
               selectedClientId={selectedClientId}
               onSelectClient={handleClientClick}
+              onOpenCommunications={(client) => {
+                setSelectedClientId(client.id);
+                setOpenCommunicationsForClient(client.id);
+              }}
             />
           </div>
 
@@ -3555,6 +3630,8 @@ export default function OutreachPage() {
                 onEmailSent={handleEmailSent}
                 onMoveToScheduling={handleMoveToScheduling}
                 onMoveToReferral={handleMoveToReferral}
+                openCommunicationsModal={openCommunicationsForClient === selectedClient.id}
+                onCommunicationsModalOpened={() => setOpenCommunicationsForClient(null)}
               />
             ) : (
               <div className="flex-1 flex items-center justify-center bg-gray-50">

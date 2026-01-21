@@ -24,15 +24,40 @@ interface OutreachDashboardProps {
   clients: Client[];
   selectedClientId: string | null;
   onSelectClient: (client: Client) => void;
+  onOpenCommunications?: (client: Client) => void;
 }
 
 // Status badge component with new outreach statuses
-function StatusBadge({ status, dueDate }: { status: string; dueDate?: string }) {
+function StatusBadge({
+  status,
+  dueDate,
+  onClick,
+}: {
+  status: string;
+  dueDate?: string;
+  onClick?: () => void;
+}) {
   const isOverdue = dueDate && new Date(dueDate) < new Date();
   const isDueToday = dueDate && isToday(new Date(dueDate));
 
   // New automated outreach statuses
   if (status === "in_communication") {
+    // Make it clickable if onClick is provided
+    if (onClick) {
+      return (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onClick();
+          }}
+          className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded bg-green-100 text-green-700 hover:bg-green-200 hover:ring-2 hover:ring-green-300 transition-all cursor-pointer"
+          title="Click to view communications"
+        >
+          <MessageCircle className="w-3 h-3" />
+          In Communication
+        </button>
+      );
+    }
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded bg-green-100 text-green-700">
         <MessageCircle className="w-3 h-3" />
@@ -168,12 +193,14 @@ function OutreachRow({
   client,
   isSelected,
   onClick,
+  onOpenCommunications,
   totalAttempts,
   showColorCoding,
 }: {
   client: Client;
   isSelected: boolean;
   onClick: () => void;
+  onOpenCommunications?: () => void;
   totalAttempts: number;
   showColorCoding: boolean;
 }) {
@@ -327,7 +354,11 @@ function OutreachRow({
         </div>
       </td>
       <td className="px-4 py-3">
-        <StatusBadge status={client.status} dueDate={dueDate?.toISOString()} />
+        <StatusBadge
+          status={client.status}
+          dueDate={dueDate?.toISOString()}
+          onClick={client.status === "in_communication" ? onOpenCommunications : undefined}
+        />
       </td>
       <td className="px-4 py-3 text-sm text-gray-600">{nextAction}</td>
       <td className="px-4 py-3 text-sm">
@@ -363,6 +394,7 @@ export function OutreachDashboard({
   clients,
   selectedClientId,
   onSelectClient,
+  onOpenCommunications,
 }: OutreachDashboardProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortField, setSortField] = useState<SortField>("dueDate");
@@ -510,6 +542,9 @@ export function OutreachDashboard({
                 client={client}
                 isSelected={client.id === selectedClientId}
                 onClick={() => onSelectClient(client)}
+                onOpenCommunications={
+                  onOpenCommunications ? () => onOpenCommunications(client) : undefined
+                }
                 totalAttempts={totalAttempts}
                 showColorCoding={showColorCoding}
               />
