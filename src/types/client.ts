@@ -158,6 +158,7 @@ export interface Communication {
   bodyPreview: string;
   fullBody?: string;
   sentBy?: string;
+  outreachAttemptNumber?: number; // Which outreach attempt this communication is associated with (1=initial, 2=follow-up #1, etc.)
 }
 
 export interface Clinician {

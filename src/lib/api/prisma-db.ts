@@ -1721,6 +1721,7 @@ export const communicationsDbApi = {
       bodyPreview: c.bodyPreview,
       fullBody: c.fullBody || undefined,
       sentBy: c.sentBy || undefined,
+      outreachAttemptNumber: c.outreachAttemptNumber || undefined,
     }));
   },
 
@@ -1741,6 +1742,7 @@ export const communicationsDbApi = {
       bodyPreview: c.bodyPreview,
       fullBody: c.fullBody || undefined,
       sentBy: c.sentBy || undefined,
+      outreachAttemptNumber: c.outreachAttemptNumber || undefined,
     }));
   },
 
@@ -1759,6 +1761,7 @@ export const communicationsDbApi = {
         bodyPreview: communication.bodyPreview,
         fullBody: communication.fullBody || null,
         sentBy: communication.sentBy || null,
+        outreachAttemptNumber: communication.outreachAttemptNumber || null,
       },
     });
 
@@ -1774,6 +1777,7 @@ export const communicationsDbApi = {
       bodyPreview: c.bodyPreview,
       fullBody: c.fullBody || undefined,
       sentBy: c.sentBy || undefined,
+      outreachAttemptNumber: c.outreachAttemptNumber || undefined,
     };
   },
 

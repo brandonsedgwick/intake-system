@@ -68,6 +68,15 @@ export async function POST(request: NextRequest) {
 
     const { messageId, threadId } = result;
 
+    // Get the outreach attempt number if this is an outreach email
+    let outreachAttemptNumber: number | undefined;
+    if (outreachAttemptId) {
+      const attempt = await outreachAttemptsDbApi.getById(outreachAttemptId);
+      if (attempt) {
+        outreachAttemptNumber = attempt.attemptNumber;
+      }
+    }
+
     // Record the communication
     await communicationsDbApi.create({
       clientId,
@@ -80,6 +89,7 @@ export async function POST(request: NextRequest) {
       bodyPreview: emailBody.replace(/<[^>]*>/g, "").substring(0, 200),
       fullBody: emailBody,
       sentBy: session.user?.email || undefined,
+      outreachAttemptNumber,
     });
 
     // If this is an outreach email, update the OutreachAttempt with Gmail IDs

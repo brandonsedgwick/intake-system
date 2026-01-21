@@ -111,6 +111,7 @@ export async function GET(request: NextRequest) {
               gmailThreadId: attempt.gmailThreadId,
               subject: `Re: ${attempt.emailSubject || "Outreach"}`,
               bodyPreview: scanResult.latestReplyPreview,
+              outreachAttemptNumber: attempt.attemptNumber,
             });
           }
 
@@ -272,6 +273,7 @@ export async function POST(request: NextRequest) {
                 gmailThreadId: attempt.gmailThreadId,
                 subject: `Re: ${attempt.emailSubject || "Outreach"}`,
                 bodyPreview: scanResult.latestReplyPreview,
+                outreachAttemptNumber: attempt.attemptNumber,
               });
             }
 
