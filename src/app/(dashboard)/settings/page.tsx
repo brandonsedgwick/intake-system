@@ -243,6 +243,7 @@ function FollowUpSettings() {
     followUp2Days: "",
     autoCloseDays: "",
     outreachAttemptCount: "",
+    replyCheckIntervalMinutes: "",
   });
 
   // Initialize form data when settings load
@@ -253,6 +254,7 @@ function FollowUpSettings() {
         followUp2Days: settings.followUp2Days || "5",
         autoCloseDays: settings.autoCloseDays || "7",
         outreachAttemptCount: settings.outreachAttemptCount || "3",
+        replyCheckIntervalMinutes: settings.replyCheckIntervalMinutes || "5",
       });
     }
   });
@@ -360,6 +362,36 @@ function FollowUpSettings() {
           </div>
           <p className="text-xs text-gray-500 mt-2">
             Example: 3 = Initial Outreach + Follow-up #1 + Follow-up #2
+          </p>
+        </div>
+      </div>
+
+      {/* Response Tracking Section */}
+      <div className="border-t pt-6">
+        <h3 className="font-medium text-gray-900 mb-4">Response Tracking</h3>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Reply Check Interval
+          </label>
+          <div className="flex items-center gap-2">
+            <select
+              value={formData.replyCheckIntervalMinutes || settings?.replyCheckIntervalMinutes || "5"}
+              onChange={(e) =>
+                setFormData({ ...formData, replyCheckIntervalMinutes: e.target.value })
+              }
+              className="border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="1">1 minute</option>
+              <option value="2">2 minutes</option>
+              <option value="5">5 minutes</option>
+              <option value="10">10 minutes</option>
+              <option value="15">15 minutes</option>
+              <option value="30">30 minutes</option>
+              <option value="60">60 minutes</option>
+            </select>
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            How often to automatically check Gmail for client replies. Polling pauses when the browser tab is not focused.
           </p>
         </div>
       </div>

@@ -129,6 +129,27 @@ const statusConfig: Record<
     bgColor: "bg-orange-100",
     textColor: "text-orange-700",
   },
+  // New automated outreach statuses
+  awaiting_response: {
+    label: "Awaiting Response",
+    bgColor: "bg-blue-100",
+    textColor: "text-blue-700",
+  },
+  follow_up_due: {
+    label: "Follow-up Due",
+    bgColor: "bg-amber-100",
+    textColor: "text-amber-700",
+  },
+  no_contact_ok_close: {
+    label: "No Contact - OK to Close",
+    bgColor: "bg-red-100",
+    textColor: "text-red-700",
+  },
+  in_communication: {
+    label: "In Communication",
+    bgColor: "bg-green-100",
+    textColor: "text-green-700",
+  },
 };
 
 function getInitials(firstName: string, lastName: string) {

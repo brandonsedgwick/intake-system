@@ -112,6 +112,27 @@ const STATUS_CONFIG: Record<
     color: "bg-orange-100 text-orange-800",
     icon: <AlertCircle className="w-3 h-3" />,
   },
+  // New automated outreach statuses
+  awaiting_response: {
+    label: "Awaiting Response",
+    color: "bg-blue-100 text-blue-800",
+    icon: <Clock className="w-3 h-3" />,
+  },
+  follow_up_due: {
+    label: "Follow-up Due",
+    color: "bg-amber-100 text-amber-800",
+    icon: <AlertCircle className="w-3 h-3" />,
+  },
+  no_contact_ok_close: {
+    label: "No Contact - OK to Close",
+    color: "bg-red-100 text-red-800",
+    icon: <XCircle className="w-3 h-3" />,
+  },
+  in_communication: {
+    label: "In Communication",
+    color: "bg-green-100 text-green-800",
+    icon: <CheckCircle className="w-3 h-3" />,
+  },
 };
 
 function StatusBadge({ status }: { status: ClientStatus }) {

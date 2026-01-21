@@ -372,11 +372,21 @@ model OutreachAttempt {
   status        String    @default("pending") // "pending" | "sent" | "skipped"
   emailSubject  String?
   emailPreview  String? // First 200 chars of email body
+
+  // Response tracking fields for Gmail inbox scanning
+  gmailThreadId      String?   // Thread ID for reply detection
+  gmailMessageId     String?   // Message ID of sent email
+  responseDetected   Boolean   @default(false)
+  responseDetectedAt DateTime?
+  responseMessageId  String?   // Message ID of the reply
+  responseWindowEnd  DateTime? // When 24h response window expires
+
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @default(now()) @updatedAt
 
   @@unique([clientId, attemptNumber])
   @@index([clientId])
   @@index([status])
+  @@index([gmailThreadId])
   @@map("outreach_attempts")
 }

@@ -15,7 +15,12 @@ export type ClientStatus =
   | "referred"
   | "closed_no_contact"
   | "closed_other"
-  | "duplicate";
+  | "duplicate"
+  // New statuses for automated outreach tracking
+  | "awaiting_response"    // Email sent, within 24h response window
+  | "follow_up_due"        // No reply after 24h, more attempts available
+  | "no_contact_ok_close"  // Max attempts exhausted, no reply detected
+  | "in_communication";    // Client replied
 
 // Closed status helpers
 export const CLOSED_STATUSES: ClientStatus[] = [
@@ -35,7 +40,18 @@ export type ClosedFromWorkflow = "evaluation" | "outreach" | "referral" | "sched
 // Map workflows to their associated statuses
 export const WORKFLOW_STATUS_MAP: Record<ClosedFromWorkflow, ClientStatus[]> = {
   evaluation: ["new", "pending_evaluation", "evaluation_complete", "evaluation_flagged"],
-  outreach: ["pending_outreach", "outreach_sent", "follow_up_1", "follow_up_2", "replied", "closed_no_contact"],
+  outreach: [
+    "pending_outreach",
+    "outreach_sent",
+    "follow_up_1",
+    "follow_up_2",
+    "replied",
+    "closed_no_contact",
+    "awaiting_response",
+    "follow_up_due",
+    "no_contact_ok_close",
+    "in_communication",
+  ],
   referral: ["pending_referral", "referred"],
   scheduling: ["ready_to_schedule", "scheduled", "completed"],
   other: ["duplicate", "closed_other"],
@@ -56,6 +72,9 @@ export function getNonClosedStatuses(): ClientStatus[] {
     "ready_to_schedule",
     "scheduled",
     "pending_referral",
+    "awaiting_response",
+    "follow_up_due",
+    "in_communication",
   ];
 }
 
@@ -429,6 +448,13 @@ export interface OutreachAttempt {
   status: OutreachAttemptStatus;
   emailSubject?: string;
   emailPreview?: string;
+  // Response tracking fields
+  gmailThreadId?: string;         // Thread ID for reply detection
+  gmailMessageId?: string;        // Message ID of sent email
+  responseDetected?: boolean;     // Whether a reply was found
+  responseDetectedAt?: string;    // When the reply was detected
+  responseMessageId?: string;     // Message ID of the reply
+  responseWindowEnd?: string;     // When 24h response window expires
   createdAt: string;
   updatedAt: string;
 }

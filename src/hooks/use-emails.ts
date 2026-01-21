@@ -69,6 +69,7 @@ export function useSendEmail() {
       bodyFormat?: "html" | "plain";
       templateType?: EmailTemplate["type"];
       attachments?: EmailAttachment[];
+      outreachAttemptId?: string; // ID of the outreach attempt being sent (for Gmail ID tracking)
     }) => {
       const response = await fetch("/api/emails/send", {
         method: "POST",

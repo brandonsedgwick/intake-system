@@ -32,13 +32,13 @@ import {
 import { ClosedCasesSection } from "@/components/clients/closed-cases-section";
 import { ClientPreviewModal } from "@/components/clients/client-preview-modal";
 import { RichTextEditor } from "@/components/templates/rich-text-editor";
-import { OutreachDashboard } from "@/components/outreach";
+import { OutreachDashboard, ClientCommunications } from "@/components/outreach";
 import {
   useOutreachAttempts,
   useInitializeOutreachAttempts,
   useUpdateOutreachAttempt,
 } from "@/hooks/use-outreach-attempts";
-import { formatRelativeTime, formatDate } from "@/lib/utils";
+import { formatRelativeTime, formatDate, cn } from "@/lib/utils";
 import Link from "next/link";
 import {
   Search,
@@ -70,10 +70,12 @@ import {
   MailCheck,
   Shield,
   RefreshCw,
+  RefreshCcw,
   Shuffle,
   Sparkles,
   Filter,
   ChevronRight,
+  MessageCircle,
 } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
 
@@ -83,6 +85,11 @@ const OUTREACH_STATUSES: ClientStatus[] = [
   "outreach_sent",
   "follow_up_1",
   "follow_up_2",
+  // New automated outreach statuses
+  "awaiting_response",
+  "follow_up_due",
+  "no_contact_ok_close",
+  "in_communication",
 ];
 
 // Calculate days since a given date
@@ -227,7 +234,7 @@ function getWorkflowBanner(client: Client): BannerInfo {
   }
 }
 
-// Get suggested template type based on status
+// Get suggested template type based on outreach attempts
 function getSuggestedTemplateType(status: ClientStatus): string | null {
   switch (status) {
     case "pending_outreach":
@@ -241,6 +248,33 @@ function getSuggestedTemplateType(status: ClientStatus): string | null {
     default:
       return null;
   }
+}
+
+// Get suggested template type based on outreach attempts (more accurate)
+function getSuggestedTemplateTypeFromAttempts(attempts: { attemptNumber: number; status: string }[]): string | null {
+  // Find the next pending attempt
+  const nextPending = attempts.find((a) => a.status === "pending");
+  if (!nextPending) {
+    // All attempts sent - no template suggestion
+    return null;
+  }
+
+  // Map attempt number to template type
+  if (nextPending.attemptNumber === 1) {
+    return "initial_outreach";
+  } else if (nextPending.attemptNumber === 2) {
+    return "follow_up_1";
+  } else if (nextPending.attemptNumber === 3) {
+    return "follow_up_2";
+  }
+  // For attempts > 3, reuse follow_up_2 template
+  return "follow_up_2";
+}
+
+// Get attempt label for UI display
+function getAttemptDisplayLabel(attemptNumber: number): string {
+  if (attemptNumber === 1) return "Initial Outreach";
+  return `Follow-up #${attemptNumber - 1}`;
 }
 
 // Client Row Component for the left panel
@@ -1439,6 +1473,16 @@ function ReadingPane({
   // Track slots selected from availability modal to save when email is sent
   const [pendingOfferedSlots, setPendingOfferedSlots] = useState<SelectedSlotInfo[]>([]);
 
+  // Track whether user is using previous slots or new availability
+  const [usePreviousSlots, setUsePreviousSlots] = useState(false);
+
+  // Tab navigation state
+  type ReadingPaneTab = "details" | "communications" | "outreach-history";
+  const [activeTab, setActiveTab] = useState<ReadingPaneTab>("details");
+
+  // Selected availability for communications tab
+  const [communicationsSelectedAvailability, setCommunicationsSelectedAvailability] = useState<string[]>([]);
+
   // Filter templates to outreach types only
   const outreachTemplates = useMemo(() => {
     return allTemplates?.filter(
@@ -1447,12 +1491,30 @@ function ReadingPane({
     );
   }, [allTemplates]);
 
-  // Get suggested template based on client status
-  const suggestedTemplateType = getSuggestedTemplateType(client.status);
+  // Get next pending attempt info
+  const nextPendingAttempt = outreachAttempts.find((a) => a.status === "pending");
+  const nextAttemptNumber = nextPendingAttempt?.attemptNumber || 1;
+  const isFollowUp = nextAttemptNumber > 1;
+  const attemptLabel = getAttemptDisplayLabel(nextAttemptNumber);
+
+  // Get suggested template based on outreach attempts (more accurate than client status)
+  const suggestedTemplateType = outreachAttempts.length > 0
+    ? getSuggestedTemplateTypeFromAttempts(outreachAttempts)
+    : getSuggestedTemplateType(client.status);
   const suggestedTemplate = useMemo(() => {
     if (!suggestedTemplateType || !outreachTemplates) return null;
     return outreachTemplates.find((t) => t.type === suggestedTemplateType) || null;
   }, [suggestedTemplateType, outreachTemplates]);
+
+  // Parse previously offered slots for follow-up reuse
+  const previouslyOfferedSlots = useMemo(() => {
+    if (!client.offeredAvailability) return [];
+    try {
+      return JSON.parse(client.offeredAvailability) as OfferedSlot[];
+    } catch {
+      return [];
+    }
+  }, [client.offeredAvailability]);
 
   // Auto-select suggested template when client changes
   useEffect(() => {
@@ -1460,6 +1522,68 @@ function ReadingPane({
       onSelectTemplate(suggestedTemplate);
     }
   }, [suggestedTemplate, selectedTemplate, onSelectTemplate]);
+
+  // Reset usePreviousSlots when client changes
+  useEffect(() => {
+    setUsePreviousSlots(false);
+    setPendingOfferedSlots([]);
+  }, [client.id]);
+
+  // Auto-initialize outreach attempts if client is in outreach workflow but has no attempts
+  // This handles cases where emails were sent before the attempt tracking was properly set up
+  useEffect(() => {
+    const initializeAttemptsForExistingClient = async () => {
+      // Statuses that indicate emails have been sent
+      const sentStatuses: Record<string, number> = {
+        awaiting_response: 1, // At least 1 email sent
+        follow_up_due: 1, // At least 1 email sent
+        outreach_sent: 1, // Legacy: initial sent
+        follow_up_1: 2, // Legacy: 2 emails sent
+        follow_up_2: 3, // Legacy: 3 emails sent
+      };
+
+      const sentCount = sentStatuses[client.status];
+      if (sentCount === undefined) return;
+
+      // If client has sent emails but no attempts tracked, initialize and mark as sent
+      if (outreachAttempts.length === 0) {
+        try {
+          const newAttempts = await initializeAttempts.mutateAsync(client.id);
+
+          // Mark the appropriate number of attempts as "sent"
+          for (let i = 0; i < sentCount && i < newAttempts.length; i++) {
+            await updateAttempt.mutateAsync({
+              clientId: client.id,
+              attemptId: newAttempts[i].id,
+              status: "sent",
+              sentAt: new Date().toISOString(), // Use current time as placeholder
+            });
+          }
+        } catch (error) {
+          console.error("Failed to initialize outreach attempts:", error);
+        }
+      }
+    };
+
+    initializeAttemptsForExistingClient();
+  }, [client.id, client.status, outreachAttempts.length, initializeAttempts, updateAttempt]);
+
+  // When using previous slots, convert them to pending slots format
+  useEffect(() => {
+    if (usePreviousSlots && previouslyOfferedSlots.length > 0) {
+      const convertedSlots: SelectedSlotInfo[] = previouslyOfferedSlots.map((slot) => ({
+        slotId: slot.slotId,
+        day: slot.day,
+        time: slot.time,
+        clinicians: slot.clinicians,
+      }));
+      setPendingOfferedSlots(convertedSlots);
+    } else if (!usePreviousSlots) {
+      // Clear pending slots when switching away from previous slots
+      // Only if we haven't manually selected new slots
+      // Actually, keep pending slots if user selected new ones
+    }
+  }, [usePreviousSlots, previouslyOfferedSlots]);
 
   const banner = getWorkflowBanner(client);
 
@@ -1576,6 +1700,24 @@ ${slotLines.join("\n")}
     }
 
     try {
+      // FIRST: Ensure outreach attempts exist and find the pending one
+      // This must happen BEFORE sending so we can pass the attempt ID to the API
+      let attempts = outreachAttempts;
+      if (attempts.length === 0) {
+        try {
+          // Get the newly initialized attempts from the mutation result
+          attempts = await initializeAttempts.mutateAsync(client.id);
+        } catch {
+          // Failed to initialize attempts, continue without tracking
+          console.error("Failed to initialize outreach attempts");
+        }
+      }
+
+      // Find the next pending attempt
+      const pendingAttempt = attempts.find((a) => a.status === "pending");
+
+      // SECOND: Send the email WITH the outreach attempt ID
+      // This allows the backend to store Gmail thread/message IDs on the attempt
       await sendEmailMutation.mutateAsync({
         clientId: client.id,
         to: editedTo,
@@ -1586,23 +1728,10 @@ ${slotLines.join("\n")}
         bodyFormat: "html",
         templateType: selectedTemplate?.type,
         attachments: attachments.length > 0 ? attachments : undefined,
+        outreachAttemptId: pendingAttempt?.id, // Pass attempt ID so Gmail IDs get stored
       });
 
-      // Track outreach attempt
-      // If no outreach attempts exist, initialize them first
-      let attempts = outreachAttempts;
-      if (attempts.length === 0) {
-        try {
-          await initializeAttempts.mutateAsync(client.id);
-          // Refetch would be handled by the hook, but we need to update the next pending
-        } catch {
-          // Failed to initialize attempts, continue without tracking
-          console.error("Failed to initialize outreach attempts");
-        }
-      }
-
-      // Find the next pending attempt and mark it as sent
-      const pendingAttempt = attempts.find((a) => a.status === "pending");
+      // THIRD: Mark the attempt as sent (the backend also does this, but we update locally too)
       if (pendingAttempt) {
         try {
           await updateAttempt.mutateAsync({
@@ -1619,8 +1748,9 @@ ${slotLines.join("\n")}
         }
       }
 
-      // Save offered availability if any slots were selected
-      if (pendingOfferedSlots.length > 0) {
+      // Save offered availability if any NEW slots were selected
+      // Don't save if we're reusing previous slots (they're already saved)
+      if (pendingOfferedSlots.length > 0 && !usePreviousSlots) {
         const now = new Date().toISOString();
         const newOfferedSlots: OfferedSlot[] = pendingOfferedSlots.map((slot) => ({
           slotId: slot.slotId,
@@ -1648,10 +1778,11 @@ ${slotLines.join("\n")}
             offeredAvailability: JSON.stringify(allOfferedSlots),
           },
         });
-
-        // Clear pending slots
-        setPendingOfferedSlots([]);
       }
+
+      // Clear pending slots and reset usePreviousSlots
+      setPendingOfferedSlots([]);
+      setUsePreviousSlots(false);
 
       setSendSuccess(true);
       onEmailSent();
@@ -1659,7 +1790,7 @@ ${slotLines.join("\n")}
       addToast({
         type: "success",
         title: "Email sent",
-        message: `${selectedTemplate?.type === "initial_outreach" ? "Initial outreach" : "Follow-up"} email sent to ${editedTo}`,
+        message: `${attemptLabel} email sent to ${editedTo}`,
       });
 
       setTimeout(() => {
@@ -1738,9 +1869,9 @@ ${slotLines.join("\n")}
 
       {/* Toolbar */}
       <div className="flex items-center gap-3 px-6 py-3 border-b bg-white flex-shrink-0 flex-wrap">
-        {/* Template Selector */}
+        {/* Template Selector - Dynamic label based on attempt */}
         <Dropdown
-          label="Select Template"
+          label={`Select Template for ${attemptLabel}`}
           icon={<FileEdit className="w-4 h-4" />}
           selectedLabel={selectedTemplate?.name}
           isOpen={templateDropdownOpen}
@@ -1804,16 +1935,66 @@ ${slotLines.join("\n")}
           )}
         </Dropdown>
 
-        {/* Find Availability Button */}
-        <button
-          onClick={() => setShowAvailabilityModal(true)}
-          className="flex items-center gap-2 px-4 py-2 text-purple-700 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors"
-        >
-          <Calendar className="w-4 h-4" />
-          Find Availability
-        </button>
+        {/* Availability Buttons - Show different options for follow-ups */}
+        {isFollowUp && previouslyOfferedSlots.length > 0 ? (
+          <>
+            {/* Offer Previous Slots Button */}
+            <button
+              onClick={() => {
+                setUsePreviousSlots(true);
+              }}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-lg transition-colors",
+                usePreviousSlots
+                  ? "bg-green-600 text-white"
+                  : "text-green-700 bg-green-50 border border-green-200 hover:bg-green-100"
+              )}
+              title="Reuse the availability slots offered in previous outreach"
+            >
+              <RefreshCcw className="w-4 h-4" />
+              {usePreviousSlots ? `Using Previous (${previouslyOfferedSlots.length})` : "Offer Previous Slots"}
+            </button>
 
-        {/* Process Outreach Button */}
+            {/* Offer New Availability Button */}
+            <button
+              onClick={() => {
+                setUsePreviousSlots(false);
+                setPendingOfferedSlots([]);
+                setShowAvailabilityModal(true);
+              }}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-lg transition-colors",
+                !usePreviousSlots && pendingOfferedSlots.length > 0
+                  ? "bg-purple-600 text-white"
+                  : "text-purple-700 bg-purple-50 border border-purple-200 hover:bg-purple-100"
+              )}
+              title="Select new availability slots to offer"
+            >
+              <Calendar className="w-4 h-4" />
+              {!usePreviousSlots && pendingOfferedSlots.length > 0
+                ? `New Slots (${pendingOfferedSlots.length})`
+                : "Offer New Availability"}
+            </button>
+          </>
+        ) : (
+          /* Initial outreach - just show Find Availability */
+          <button
+            onClick={() => setShowAvailabilityModal(true)}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-lg transition-colors",
+              pendingOfferedSlots.length > 0
+                ? "bg-purple-600 text-white"
+                : "text-purple-700 bg-purple-50 border border-purple-200 hover:bg-purple-100"
+            )}
+          >
+            <Calendar className="w-4 h-4" />
+            {pendingOfferedSlots.length > 0
+              ? `Availability (${pendingOfferedSlots.length} slots)`
+              : "Find Availability"}
+          </button>
+        )}
+
+        {/* Process Outreach Button - Dynamic label based on attempt */}
         {selectedTemplate && (
           <button
             onClick={handlePreviewEmail}
@@ -1825,7 +2006,7 @@ ${slotLines.join("\n")}
             ) : (
               <Send className="w-4 h-4" />
             )}
-            Process Outreach
+            Process {attemptLabel}
           </button>
         )}
 
@@ -1859,10 +2040,176 @@ ${slotLines.join("\n")}
         </button>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Basic Information */}
+      {/* Tab Navigation */}
+      <div className="flex border-b bg-white flex-shrink-0">
+        <button
+          onClick={() => setActiveTab("details")}
+          className={cn(
+            "flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors",
+            activeTab === "details"
+              ? "border-purple-600 text-purple-600"
+              : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+          )}
+        >
+          <User className="w-4 h-4" />
+          Details
+        </button>
+        <button
+          onClick={() => setActiveTab("communications")}
+          className={cn(
+            "flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors",
+            activeTab === "communications"
+              ? "border-purple-600 text-purple-600"
+              : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+          )}
+        >
+          <MessageCircle className="w-4 h-4" />
+          Client Communications
+        </button>
+        <button
+          onClick={() => setActiveTab("outreach-history")}
+          className={cn(
+            "flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors",
+            activeTab === "outreach-history"
+              ? "border-purple-600 text-purple-600"
+              : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+          )}
+        >
+          <Clock className="w-4 h-4" />
+          Outreach History
+        </button>
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === "communications" ? (
+        <ClientCommunications
+          client={client}
+          onOpenAvailabilityModal={() => setShowAvailabilityModal(true)}
+          selectedAvailability={communicationsSelectedAvailability}
+          onClearAvailability={() => setCommunicationsSelectedAvailability([])}
+        />
+      ) : activeTab === "outreach-history" ? (
+        <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
+          <div className="space-y-6">
+            {/* Outreach Attempts Timeline */}
+            <div className="bg-white rounded-lg border p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-purple-600" />
+                Outreach Timeline
+              </h3>
+              {outreachAttempts.length === 0 ? (
+                <p className="text-gray-500 text-sm">No outreach attempts recorded yet.</p>
+              ) : (
+                <div className="space-y-4">
+                  {outreachAttempts.map((attempt, index) => (
+                    <div
+                      key={attempt.id}
+                      className={cn(
+                        "flex items-start gap-4 p-4 rounded-lg border",
+                        attempt.status === "sent"
+                          ? "bg-green-50 border-green-200"
+                          : attempt.status === "pending"
+                          ? "bg-amber-50 border-amber-200"
+                          : "bg-gray-50 border-gray-200"
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          "w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0",
+                          attempt.status === "sent"
+                            ? "bg-green-500"
+                            : attempt.status === "pending"
+                            ? "bg-amber-400"
+                            : "bg-gray-300"
+                        )}
+                      >
+                        {attempt.status === "sent" ? (
+                          <Check className="w-5 h-5 text-white" />
+                        ) : (
+                          <Clock className="w-5 h-5 text-white" />
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-medium text-gray-900">
+                            {attempt.attemptNumber === 1
+                              ? "Initial Outreach"
+                              : `Follow-up #${attempt.attemptNumber - 1}`}
+                          </h4>
+                          <span
+                            className={cn(
+                              "text-xs px-2 py-1 rounded-full font-medium",
+                              attempt.status === "sent"
+                                ? "bg-green-100 text-green-700"
+                                : attempt.status === "pending"
+                                ? "bg-amber-100 text-amber-700"
+                                : "bg-gray-100 text-gray-600"
+                            )}
+                          >
+                            {attempt.status === "sent" ? "Sent" : attempt.status === "pending" ? "Pending" : attempt.status}
+                          </span>
+                        </div>
+                        {attempt.sentAt && (
+                          <p className="text-sm text-gray-600 mt-1">
+                            Sent on {formatDate(attempt.sentAt)}
+                          </p>
+                        )}
+                        {attempt.emailSubject && (
+                          <p className="text-sm text-gray-500 mt-1">
+                            Subject: {attempt.emailSubject}
+                          </p>
+                        )}
+                        {attempt.responseDetected && (
+                          <div className="flex items-center gap-2 mt-2 text-sm text-green-700">
+                            <CheckCircle className="w-4 h-4" />
+                            Response detected
+                            {attempt.responseDetectedAt && (
+                              <span>on {formatDate(attempt.responseDetectedAt)}</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Legacy Outreach History */}
+            {(client.initialOutreachDate || client.followUp1Date || client.followUp2Date) && (
+              <div className="bg-white rounded-lg border p-6">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <FileText className="w-4 h-4" />
+                  Legacy Records
+                </h3>
+                <dl className="space-y-2 text-sm">
+                  {client.initialOutreachDate && (
+                    <div className="flex justify-between">
+                      <dt className="text-gray-500">Initial Outreach</dt>
+                      <dd className="text-gray-900">{formatDate(client.initialOutreachDate)}</dd>
+                    </div>
+                  )}
+                  {client.followUp1Date && (
+                    <div className="flex justify-between">
+                      <dt className="text-gray-500">Follow-up 1</dt>
+                      <dd className="text-gray-900">{formatDate(client.followUp1Date)}</dd>
+                    </div>
+                  )}
+                  {client.followUp2Date && (
+                    <div className="flex justify-between">
+                      <dt className="text-gray-500">Follow-up 2</dt>
+                      <dd className="text-gray-900">{formatDate(client.followUp2Date)}</dd>
+                    </div>
+                  )}
+                </dl>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Basic Information */}
           <div className="bg-white rounded-lg border p-4">
             <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
               <User className="w-4 h-4" />
@@ -2103,8 +2450,9 @@ ${slotLines.join("\n")}
               </div>
             );
           })()}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Availability Modal */}
       <AvailabilityModal
@@ -2114,6 +2462,14 @@ ${slotLines.join("\n")}
         onInsertAvailability={(text, selectedSlots) => {
           // Track selected slots for when email is sent
           setPendingOfferedSlots(selectedSlots);
+
+          // If on communications tab, update communications availability state
+          if (activeTab === "communications") {
+            const slotStrings = selectedSlots.map(
+              (slot) => `${slot.day} at ${slot.time} with ${slot.clinicians.join(" or ")}`
+            );
+            setCommunicationsSelectedAvailability(slotStrings);
+          }
 
           // If email preview is open and in edit mode, append to body
           if (showEmailPreview && isEditing) {
@@ -2390,7 +2746,7 @@ ${slotLines.join("\n")}
 interface CloseConfirmModalProps {
   client: Client;
   isOpen: boolean;
-  onConfirm: () => void;
+  onConfirm: (reason: string) => void;
   onCancel: () => void;
   isLoading: boolean;
 }
@@ -2402,6 +2758,17 @@ function CloseConfirmModal({
   onCancel,
   isLoading,
 }: CloseConfirmModalProps) {
+  const [closeReason, setCloseReason] = useState("");
+  const [reasonError, setReasonError] = useState(false);
+
+  // Reset state when modal opens/closes
+  useEffect(() => {
+    if (isOpen) {
+      setCloseReason("");
+      setReasonError(false);
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const hasAllFollowUps = !!client.followUp2Date;
@@ -2409,6 +2776,14 @@ function CloseConfirmModal({
     (client.initialOutreachDate ? 1 : 0) +
     (client.followUp1Date ? 1 : 0) +
     (client.followUp2Date ? 1 : 0);
+
+  const handleConfirm = () => {
+    if (!closeReason.trim()) {
+      setReasonError(true);
+      return;
+    }
+    onConfirm(closeReason.trim());
+  };
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -2453,7 +2828,7 @@ function CloseConfirmModal({
             </p>
 
             {/* Outreach Summary */}
-            <div className="bg-gray-50 rounded-lg p-3 mb-6 text-sm">
+            <div className="bg-gray-50 rounded-lg p-3 mb-4 text-sm">
               <div className="font-medium text-gray-700 mb-2">Outreach Summary:</div>
               <ul className="space-y-1 text-gray-600">
                 <li className="flex items-center gap-2">
@@ -2494,6 +2869,28 @@ function CloseConfirmModal({
               </ul>
             </div>
 
+            {/* Required Reason Field */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Reason for closing <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                value={closeReason}
+                onChange={(e) => {
+                  setCloseReason(e.target.value);
+                  if (e.target.value.trim()) setReasonError(false);
+                }}
+                placeholder="Enter the reason for closing this case..."
+                rows={3}
+                className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 ${
+                  reasonError ? "border-red-500" : "border-gray-300"
+                }`}
+              />
+              {reasonError && (
+                <p className="text-xs text-red-500 mt-1">A reason is required to close this case</p>
+              )}
+            </div>
+
             <div className="flex gap-3">
               <button
                 onClick={onCancel}
@@ -2503,7 +2900,7 @@ function CloseConfirmModal({
                 Cancel
               </button>
               <button
-                onClick={onConfirm}
+                onClick={handleConfirm}
                 disabled={isLoading}
                 className={`flex-1 px-4 py-2 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2 ${
                   hasAllFollowUps
@@ -2810,11 +3207,17 @@ export default function OutreachPage() {
   const pendingCount =
     outreachClients?.filter((c) => c.status === "pending_outreach").length || 0;
   const awaitingCount =
-    outreachClients?.filter((c) => c.status === "outreach_sent").length || 0;
+    outreachClients?.filter((c) =>
+      c.status === "outreach_sent" || c.status === "awaiting_response"
+    ).length || 0;
   const followUpCount =
     outreachClients?.filter(
-      (c) => c.status === "follow_up_1" || c.status === "follow_up_2"
+      (c) => c.status === "follow_up_1" || c.status === "follow_up_2" || c.status === "follow_up_due"
     ).length || 0;
+  const inCommunicationCount =
+    outreachClients?.filter((c) => c.status === "in_communication").length || 0;
+  const noContactCount =
+    outreachClients?.filter((c) => c.status === "no_contact_ok_close").length || 0;
 
   // Get the selected client object
   const selectedClient = outreachClients?.find((c) => c.id === selectedClientId);
@@ -2975,7 +3378,7 @@ export default function OutreachPage() {
     setCloseConfirmClient(client);
   };
 
-  const handleConfirmClose = async () => {
+  const handleConfirmClose = async (reason: string) => {
     if (!closeConfirmClient) return;
 
     try {
@@ -2984,7 +3387,7 @@ export default function OutreachPage() {
         data: {
           status: "closed_no_contact",
           closedDate: new Date().toISOString(),
-          closedReason: "no_response_after_outreach",
+          closedReason: reason, // Now uses the user-provided reason
           closedFromWorkflow: "outreach",
           closedFromStatus: closeConfirmClient.status,
         },
@@ -3047,11 +3450,27 @@ export default function OutreachPage() {
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 bg-orange-500 rounded-full"></span>
+            <span className="w-2 h-2 bg-amber-500 rounded-full"></span>
             <span className="text-gray-600">
-              <span className="font-semibold text-orange-600">{followUpCount}</span> Follow-up
+              <span className="font-semibold text-amber-600">{followUpCount}</span> Follow-up
             </span>
           </div>
+          {inCommunicationCount > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+              <span className="text-gray-600">
+                <span className="font-semibold text-green-600">{inCommunicationCount}</span> In Comm.
+              </span>
+            </div>
+          )}
+          {noContactCount > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+              <span className="text-gray-600">
+                <span className="font-semibold text-red-600">{noContactCount}</span> No Contact
+              </span>
+            </div>
+          )}
         </div>
       </div>
 

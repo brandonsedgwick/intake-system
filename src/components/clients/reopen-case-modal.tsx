@@ -30,6 +30,11 @@ const STATUS_LABELS: Record<ClientStatus, string> = {
   closed_no_contact: "Closed - No Contact",
   closed_other: "Closed",
   duplicate: "Duplicate",
+  // New automated outreach statuses
+  awaiting_response: "Awaiting Response",
+  follow_up_due: "Follow-up Due",
+  no_contact_ok_close: "No Contact - OK to Close",
+  in_communication: "In Communication",
 };
 
 // Group statuses by workflow for organized dropdown

@@ -75,6 +75,11 @@ const STATUS_CONFIG: Record<
   closed_no_contact: { label: "Closed - No Contact", color: "text-gray-600", bgColor: "bg-gray-100" },
   closed_other: { label: "Closed", color: "text-gray-600", bgColor: "bg-gray-100" },
   duplicate: { label: "Duplicate", color: "text-orange-700", bgColor: "bg-orange-100" },
+  // New automated outreach statuses
+  awaiting_response: { label: "Awaiting Response", color: "text-blue-700", bgColor: "bg-blue-100" },
+  follow_up_due: { label: "Follow-up Due", color: "text-amber-700", bgColor: "bg-amber-100" },
+  no_contact_ok_close: { label: "No Contact - OK to Close", color: "text-red-700", bgColor: "bg-red-100" },
+  in_communication: { label: "In Communication", color: "text-green-700", bgColor: "bg-green-100" },
 };
 
 // Workflow labels for closed case display

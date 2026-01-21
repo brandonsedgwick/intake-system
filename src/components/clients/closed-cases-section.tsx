@@ -32,6 +32,11 @@ const STATUS_LABELS: Record<ClientStatus, string> = {
   closed_no_contact: "Closed - No Contact",
   closed_other: "Closed",
   duplicate: "Duplicate",
+  // New automated outreach statuses
+  awaiting_response: "Awaiting Response",
+  follow_up_due: "Follow-up Due",
+  no_contact_ok_close: "No Contact - OK to Close",
+  in_communication: "In Communication",
 };
 
 // Status badge colors
@@ -53,6 +58,11 @@ const STATUS_BADGE_COLORS: Record<ClientStatus, { bg: string; text: string }> = 
   closed_no_contact: { bg: "bg-gray-100", text: "text-gray-600" },
   closed_other: { bg: "bg-gray-100", text: "text-gray-600" },
   duplicate: { bg: "bg-orange-100", text: "text-orange-700" },
+  // New automated outreach statuses
+  awaiting_response: { bg: "bg-blue-100", text: "text-blue-700" },
+  follow_up_due: { bg: "bg-amber-100", text: "text-amber-700" },
+  no_contact_ok_close: { bg: "bg-red-100", text: "text-red-700" },
+  in_communication: { bg: "bg-green-100", text: "text-green-700" },
 };
 
 interface ClosedCasesSectionProps {

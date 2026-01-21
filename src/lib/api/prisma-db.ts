@@ -1894,6 +1894,12 @@ export const outreachAttemptsDbApi = {
       status: a.status as OutreachAttemptStatus,
       emailSubject: a.emailSubject || undefined,
       emailPreview: a.emailPreview || undefined,
+      gmailThreadId: a.gmailThreadId || undefined,
+      gmailMessageId: a.gmailMessageId || undefined,
+      responseDetected: a.responseDetected,
+      responseDetectedAt: a.responseDetectedAt?.toISOString(),
+      responseMessageId: a.responseMessageId || undefined,
+      responseWindowEnd: a.responseWindowEnd?.toISOString(),
       createdAt: a.createdAt.toISOString(),
       updatedAt: a.updatedAt.toISOString(),
     }));
@@ -1912,6 +1918,12 @@ export const outreachAttemptsDbApi = {
       status: a.status as OutreachAttemptStatus,
       emailSubject: a.emailSubject || undefined,
       emailPreview: a.emailPreview || undefined,
+      gmailThreadId: a.gmailThreadId || undefined,
+      gmailMessageId: a.gmailMessageId || undefined,
+      responseDetected: a.responseDetected,
+      responseDetectedAt: a.responseDetectedAt?.toISOString(),
+      responseMessageId: a.responseMessageId || undefined,
+      responseWindowEnd: a.responseWindowEnd?.toISOString(),
       createdAt: a.createdAt.toISOString(),
       updatedAt: a.updatedAt.toISOString(),
     };
@@ -1947,6 +1959,12 @@ export const outreachAttemptsDbApi = {
       status: a.status as OutreachAttemptStatus,
       emailSubject: a.emailSubject || undefined,
       emailPreview: a.emailPreview || undefined,
+      gmailThreadId: a.gmailThreadId || undefined,
+      gmailMessageId: a.gmailMessageId || undefined,
+      responseDetected: a.responseDetected,
+      responseDetectedAt: a.responseDetectedAt?.toISOString(),
+      responseMessageId: a.responseMessageId || undefined,
+      responseWindowEnd: a.responseWindowEnd?.toISOString(),
       createdAt: a.createdAt.toISOString(),
       updatedAt: a.updatedAt.toISOString(),
     };
@@ -1989,6 +2007,12 @@ export const outreachAttemptsDbApi = {
       status: a.status as OutreachAttemptStatus,
       emailSubject: a.emailSubject || undefined,
       emailPreview: a.emailPreview || undefined,
+      gmailThreadId: a.gmailThreadId || undefined,
+      gmailMessageId: a.gmailMessageId || undefined,
+      responseDetected: a.responseDetected,
+      responseDetectedAt: a.responseDetectedAt?.toISOString(),
+      responseMessageId: a.responseMessageId || undefined,
+      responseWindowEnd: a.responseWindowEnd?.toISOString(),
       createdAt: a.createdAt.toISOString(),
       updatedAt: a.updatedAt.toISOString(),
     };
@@ -2027,9 +2051,18 @@ export const outreachAttemptsDbApi = {
     clientId: string,
     attemptCount: number = 3
   ): Promise<OutreachAttempt[]> {
-    const attempts: OutreachAttempt[] = [];
+    // First, get any existing attempts for this client
+    const existingAttempts = await this.getByClientId(clientId);
+    const existingAttemptNumbers = new Set(existingAttempts.map((a) => a.attemptNumber));
+
+    const attempts: OutreachAttempt[] = [...existingAttempts];
 
     for (let i = 1; i <= attemptCount; i++) {
+      // Skip if this attempt already exists
+      if (existingAttemptNumbers.has(i)) {
+        continue;
+      }
+
       const attemptType: OutreachAttemptType =
         i === 1 ? "initial_outreach" : (`follow_up_${i - 1}` as OutreachAttemptType);
 
@@ -2042,7 +2075,8 @@ export const outreachAttemptsDbApi = {
       attempts.push(attempt);
     }
 
-    return attempts;
+    // Sort by attempt number before returning
+    return attempts.sort((a, b) => a.attemptNumber - b.attemptNumber);
   },
 
   async getNextPendingAttempt(clientId: string): Promise<OutreachAttempt | null> {
@@ -2065,8 +2099,133 @@ export const outreachAttemptsDbApi = {
       status: attempt.status as OutreachAttemptStatus,
       emailSubject: attempt.emailSubject || undefined,
       emailPreview: attempt.emailPreview || undefined,
+      gmailThreadId: attempt.gmailThreadId || undefined,
+      gmailMessageId: attempt.gmailMessageId || undefined,
+      responseDetected: attempt.responseDetected,
+      responseDetectedAt: attempt.responseDetectedAt?.toISOString(),
+      responseMessageId: attempt.responseMessageId || undefined,
+      responseWindowEnd: attempt.responseWindowEnd?.toISOString(),
       createdAt: attempt.createdAt.toISOString(),
       updatedAt: attempt.updatedAt.toISOString(),
     };
+  },
+
+  /**
+   * Update an attempt with Gmail message/thread IDs when sending
+   */
+  async updateWithGmailIds(
+    id: string,
+    gmailMessageId: string,
+    gmailThreadId: string,
+    responseWindowEnd: Date
+  ): Promise<OutreachAttempt | null> {
+    const existing = await prisma.outreachAttempt.findUnique({ where: { id } });
+    if (!existing) return null;
+
+    const a = await prisma.outreachAttempt.update({
+      where: { id },
+      data: {
+        gmailMessageId,
+        gmailThreadId,
+        responseWindowEnd,
+      },
+    });
+
+    return {
+      id: a.id,
+      clientId: a.clientId,
+      attemptNumber: a.attemptNumber,
+      attemptType: a.attemptType as OutreachAttemptType,
+      sentAt: a.sentAt?.toISOString(),
+      status: a.status as OutreachAttemptStatus,
+      emailSubject: a.emailSubject || undefined,
+      emailPreview: a.emailPreview || undefined,
+      gmailThreadId: a.gmailThreadId || undefined,
+      gmailMessageId: a.gmailMessageId || undefined,
+      responseDetected: a.responseDetected,
+      responseDetectedAt: a.responseDetectedAt?.toISOString(),
+      responseMessageId: a.responseMessageId || undefined,
+      responseWindowEnd: a.responseWindowEnd?.toISOString(),
+      createdAt: a.createdAt.toISOString(),
+      updatedAt: a.updatedAt.toISOString(),
+    };
+  },
+
+  /**
+   * Update response detection status when a reply is found
+   */
+  async updateResponseStatus(
+    id: string,
+    updates: {
+      responseDetected: boolean;
+      responseDetectedAt?: string;
+      responseMessageId?: string;
+    }
+  ): Promise<OutreachAttempt | null> {
+    const existing = await prisma.outreachAttempt.findUnique({ where: { id } });
+    if (!existing) return null;
+
+    const a = await prisma.outreachAttempt.update({
+      where: { id },
+      data: {
+        responseDetected: updates.responseDetected,
+        responseDetectedAt: updates.responseDetectedAt
+          ? new Date(updates.responseDetectedAt)
+          : null,
+        responseMessageId: updates.responseMessageId || null,
+      },
+    });
+
+    return {
+      id: a.id,
+      clientId: a.clientId,
+      attemptNumber: a.attemptNumber,
+      attemptType: a.attemptType as OutreachAttemptType,
+      sentAt: a.sentAt?.toISOString(),
+      status: a.status as OutreachAttemptStatus,
+      emailSubject: a.emailSubject || undefined,
+      emailPreview: a.emailPreview || undefined,
+      gmailThreadId: a.gmailThreadId || undefined,
+      gmailMessageId: a.gmailMessageId || undefined,
+      responseDetected: a.responseDetected,
+      responseDetectedAt: a.responseDetectedAt?.toISOString(),
+      responseMessageId: a.responseMessageId || undefined,
+      responseWindowEnd: a.responseWindowEnd?.toISOString(),
+      createdAt: a.createdAt.toISOString(),
+      updatedAt: a.updatedAt.toISOString(),
+    };
+  },
+
+  /**
+   * Get all sent attempts that are awaiting response (not yet detected)
+   */
+  async getSentAwaitingResponse(): Promise<OutreachAttempt[]> {
+    const attempts = await prisma.outreachAttempt.findMany({
+      where: {
+        status: "sent",
+        responseDetected: false,
+        gmailThreadId: { not: null },
+      },
+      orderBy: { sentAt: "desc" },
+    });
+
+    return attempts.map((a) => ({
+      id: a.id,
+      clientId: a.clientId,
+      attemptNumber: a.attemptNumber,
+      attemptType: a.attemptType as OutreachAttemptType,
+      sentAt: a.sentAt?.toISOString(),
+      status: a.status as OutreachAttemptStatus,
+      emailSubject: a.emailSubject || undefined,
+      emailPreview: a.emailPreview || undefined,
+      gmailThreadId: a.gmailThreadId || undefined,
+      gmailMessageId: a.gmailMessageId || undefined,
+      responseDetected: a.responseDetected,
+      responseDetectedAt: a.responseDetectedAt?.toISOString(),
+      responseMessageId: a.responseMessageId || undefined,
+      responseWindowEnd: a.responseWindowEnd?.toISOString(),
+      createdAt: a.createdAt.toISOString(),
+      updatedAt: a.updatedAt.toISOString(),
+    }));
   },
 };
