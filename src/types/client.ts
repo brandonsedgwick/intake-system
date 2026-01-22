@@ -138,6 +138,7 @@ export interface Client {
   // Availability Tracking
   offeredAvailability?: string; // JSON string of OfferedSlot[]
   acceptedSlot?: string; // JSON string of AcceptedSlot
+  scheduledAppointment?: string; // JSON string of ScheduledAppointment
 
   // Closure
   closedDate?: string;
@@ -212,6 +213,22 @@ export interface AcceptedSlot {
   time: string;
   clinician: string;    // single clinician who was selected
   acceptedAt: string;   // ISO timestamp
+}
+
+// Recurrence pattern options for scheduled appointments
+export type RecurrencePattern = "weekly" | "bi-weekly" | "monthly" | "one-time";
+
+// Scheduled appointment - when moving client to scheduling
+export interface ScheduledAppointment {
+  slotId?: string;           // If from offered slots
+  day: string;               // "Monday", "Tuesday", etc. (Mon-Sun)
+  time: string;              // "9:00 AM", "2:00 PM", etc.
+  clinician: string;         // Selected clinician name
+  startDate: string;         // ISO date string for first appointment
+  recurrence: RecurrencePattern;
+  scheduledAt: string;       // ISO timestamp when scheduled
+  fromOfferedSlot: boolean;  // true if selected from offered times
+  communicationNote?: string; // Required if client didn't reply via email (status != in_communication)
 }
 
 // Booked slot - stored in database to track globally booked slots

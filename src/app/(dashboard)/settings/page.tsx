@@ -24,10 +24,11 @@ import {
   GripVertical,
   Save,
   ClipboardCheck,
+  Bug,
 } from "lucide-react";
 import { EvaluationConfig } from "@/components/settings/evaluation-config";
 
-type SettingsTab = "general" | "sheets" | "followups" | "intake-fields" | "evaluation";
+type SettingsTab = "general" | "sheets" | "followups" | "intake-fields" | "evaluation" | "debug";
 
 function GeneralSettings() {
   const { data: settings, isLoading } = useSettings();
@@ -675,6 +676,7 @@ export default function SettingsPage() {
     { id: "followups" as const, label: "Follow-ups", icon: Clock },
     { id: "intake-fields" as const, label: "Intake Fields", icon: FileText },
     { id: "evaluation" as const, label: "Evaluation", icon: ClipboardCheck },
+    { id: "debug" as const, label: "Debug", icon: Bug },
   ];
 
   return (
@@ -717,6 +719,83 @@ export default function SettingsPage() {
           {activeTab === "followups" && <FollowUpSettings />}
           {activeTab === "intake-fields" && <IntakeFieldsSettings />}
           {activeTab === "evaluation" && <EvaluationConfig />}
+          {activeTab === "debug" && <DebugSettings />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Debug Settings Component
+function DebugSettings() {
+  const [isClearing, setIsClearing] = useState(false);
+  const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const handleClearClients = async () => {
+    if (!confirm("Are you sure you want to delete ALL clients from the database? This cannot be undone.")) {
+      return;
+    }
+
+    setIsClearing(true);
+    setResult(null);
+
+    try {
+      const response = await fetch("/api/debug/clear-clients", {
+        method: "DELETE",
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setResult({ success: true, message: data.message });
+      } else {
+        setResult({ success: false, message: data.error || "Failed to clear clients" });
+      }
+    } catch (error) {
+      setResult({ success: false, message: "Network error" });
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+        <h3 className="text-lg font-semibold text-red-800 mb-2">Danger Zone</h3>
+        <p className="text-sm text-red-600 mb-4">
+          These actions are destructive and cannot be undone. Use with caution.
+        </p>
+
+        <div className="space-y-4">
+          <div className="bg-white border border-red-200 rounded-lg p-4">
+            <h4 className="font-medium text-gray-900 mb-2">Clear All Clients</h4>
+            <p className="text-sm text-gray-600 mb-3">
+              Delete all client entries from the database. Use this to re-sync fresh from the Google Sheet.
+            </p>
+            <button
+              onClick={handleClearClients}
+              disabled={isClearing}
+              className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+            >
+              {isClearing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Clearing...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4" />
+                  Clear All Clients
+                </>
+              )}
+            </button>
+
+            {result && (
+              <div className={`mt-3 p-3 rounded-lg ${result.success ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+                {result.message}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

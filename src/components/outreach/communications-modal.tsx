@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Client, Communication } from "@/types/client";
+import { Client, Communication, OfferedSlot } from "@/types/client";
 import { useClientCommunications } from "@/hooks/use-clients";
 import { useSendEmail, EmailAttachment } from "@/hooks/use-emails";
 import { MessageBubble } from "./message-bubble";
@@ -16,6 +16,7 @@ import {
   Clock,
   CheckCircle,
   AlertCircle,
+  Calendar,
 } from "lucide-react";
 import { formatDate, cn } from "@/lib/utils";
 import Link from "next/link";
@@ -27,6 +28,8 @@ interface CommunicationsModalProps {
   onOpenAvailabilityModal: () => void;
   selectedAvailability: string[];
   onClearAvailability: () => void;
+  onMoveToScheduling?: () => void;
+  onEmailSentWithSlots?: () => Promise<void>; // Callback to save offered slots after email is sent
   outreachStats?: {
     attemptsSent: number;
     totalAttempts: number;
@@ -41,6 +44,8 @@ export function CommunicationsModal({
   onOpenAvailabilityModal,
   selectedAvailability,
   onClearAvailability,
+  onMoveToScheduling,
+  onEmailSentWithSlots,
   outreachStats,
 }: CommunicationsModalProps) {
   // Fetch communications for this client
@@ -79,6 +84,43 @@ export function CommunicationsModal({
     return { sent, received };
   }, [sortedCommunications]);
 
+  // Parse offered availability from client
+  const offeredSlots = useMemo(() => {
+    if (!client.offeredAvailability) return [];
+    try {
+      return JSON.parse(client.offeredAvailability) as OfferedSlot[];
+    } catch {
+      return [];
+    }
+  }, [client.offeredAvailability]);
+
+  // Group offered slots by date
+  const slotsByDate = useMemo(() => {
+    return offeredSlots.reduce((acc, slot) => {
+      const date = new Date(slot.offeredAt).toLocaleDateString();
+      if (!acc[date]) {
+        acc[date] = [];
+      }
+      acc[date].push(slot);
+      return acc;
+    }, {} as Record<string, OfferedSlot[]>);
+  }, [offeredSlots]);
+
+  // Track previous status to detect changes
+  const prevStatusRef = useRef(client.status);
+
+  // Auto-refetch communications when client status changes to in_communication
+  // This handles the case where "Check Now" detects a reply while modal is open
+  useEffect(() => {
+    if (prevStatusRef.current !== client.status) {
+      // Status changed - refetch communications to get new messages
+      if (client.status === "in_communication") {
+        refetch();
+      }
+      prevStatusRef.current = client.status;
+    }
+  }, [client.status, refetch]);
+
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     if (threadEndRef.current) {
@@ -110,11 +152,24 @@ export function CommunicationsModal({
     body: string;
     attachments?: EmailAttachment[];
   }) => {
+    console.log("CommunicationsModal handleSend called");
+    console.log("CommunicationsModal - selectedAvailability:", selectedAvailability);
+    console.log("CommunicationsModal - onEmailSentWithSlots exists:", !!onEmailSentWithSlots);
+
     await sendEmail.mutateAsync({
       clientId: client.id,
       ...data,
       bodyFormat: "html",
     });
+
+    // If availability slots were included, save them to the client
+    if (selectedAvailability.length > 0 && onEmailSentWithSlots) {
+      console.log("Calling onEmailSentWithSlots callback");
+      await onEmailSentWithSlots();
+    } else {
+      console.log("NOT calling onEmailSentWithSlots - selectedAvailability.length:", selectedAvailability.length);
+    }
+
     // Refetch communications after sending
     refetch();
   };
@@ -188,6 +243,15 @@ export function CommunicationsModal({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {onMoveToScheduling && (
+              <button
+                onClick={onMoveToScheduling}
+                className="px-4 py-2 text-green-700 bg-green-100 hover:bg-green-200 rounded-lg flex items-center gap-2 transition-colors font-medium"
+              >
+                <Calendar className="w-4 h-4" />
+                Move to Scheduling
+              </button>
+            )}
             <Link
               href={`/clients/${client.id}`}
               className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg flex items-center gap-2 transition-colors"
@@ -266,6 +330,46 @@ export function CommunicationsModal({
 
             {/* Compose Form - Scrollable */}
             <div className="flex-1 overflow-y-auto">
+              {/* Previously Offered Availability */}
+              {offeredSlots.length > 0 && (
+                <div className="px-6 py-4 border-b bg-amber-50">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Calendar className="w-4 h-4 text-amber-600" />
+                    <h4 className="font-medium text-amber-900">Offered Availability</h4>
+                    <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                      {offeredSlots.length} slot{offeredSlots.length !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {Object.entries(slotsByDate)
+                      .sort(([a], [b]) => new Date(b).getTime() - new Date(a).getTime())
+                      .map(([date, slots]) => (
+                        <div key={date}>
+                          <p className="text-xs font-medium text-amber-700 mb-1">
+                            Offered {date}
+                          </p>
+                          <ul className="space-y-1">
+                            {slots.map((slot, idx) => (
+                              <li
+                                key={`${slot.slotId}-${idx}`}
+                                className="text-sm text-amber-900 flex items-start gap-2 bg-white/50 rounded px-2 py-1"
+                              >
+                                <span className="text-amber-500 mt-0.5">•</span>
+                                <span>
+                                  {slot.day} at {slot.time}
+                                  <span className="text-amber-700 ml-1">
+                                    — {slot.clinicians.join(", ")}
+                                  </span>
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
               <ReplyComposer
                 client={client}
                 communications={sortedCommunications}

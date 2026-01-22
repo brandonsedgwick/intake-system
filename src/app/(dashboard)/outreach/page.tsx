@@ -11,7 +11,7 @@ import {
   useCreateBookedSlot,
   matchesInsurance,
 } from "@/hooks/use-availability-sheets";
-import { Client, EmailTemplate, ClientStatus, SheetAvailabilitySlot, OfferedSlot, AcceptedSlot, BookedSlot } from "@/types/client";
+import { Client, EmailTemplate, ClientStatus, SheetAvailabilitySlot, OfferedSlot, AcceptedSlot, BookedSlot, ScheduledAppointment } from "@/types/client";
 import {
   computeClinicianStats,
   sortClinicianStats,
@@ -32,7 +32,7 @@ import {
 import { ClosedCasesSection } from "@/components/clients/closed-cases-section";
 import { ClientPreviewModal } from "@/components/clients/client-preview-modal";
 import { RichTextEditor } from "@/components/templates/rich-text-editor";
-import { OutreachDashboard, ClientCommunications, CommunicationsModal } from "@/components/outreach";
+import { OutreachDashboard, ClientCommunications, CommunicationsModal, SchedulingModal } from "@/components/outreach";
 import {
   useOutreachAttempts,
   useInitializeOutreachAttempts,
@@ -1500,6 +1500,7 @@ function ReadingPane({
   const previewMutation = usePreviewTemplate();
   const sendEmailMutation = useSendEmail();
   const updateClientMutation = useUpdateClient();
+  const createBookedSlot = useCreateBookedSlot();
   const { addToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1525,6 +1526,14 @@ function ReadingPane({
   // Track slots selected from availability modal to save when email is sent
   const [pendingOfferedSlots, setPendingOfferedSlots] = useState<SelectedSlotInfo[]>([]);
 
+  // Ref to always have current value in callbacks (avoids stale closure)
+  const pendingOfferedSlotsRef = useRef<SelectedSlotInfo[]>([]);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    pendingOfferedSlotsRef.current = pendingOfferedSlots;
+  }, [pendingOfferedSlots]);
+
   // Track whether user is using previous slots or new availability
   const [usePreviousSlots, setUsePreviousSlots] = useState(false);
 
@@ -1537,17 +1546,18 @@ function ReadingPane({
 
   // Communications modal state
   const [showCommunicationsModal, setShowCommunicationsModal] = useState(false);
-  const prevOpenCommunicationsModal = useRef(openCommunicationsModal);
 
-  // Open communications modal when triggered from parent (prop changes from false to true)
+  // Scheduling modal state
+  const [showSchedulingModal, setShowSchedulingModal] = useState(false);
+  const [isScheduling, setIsScheduling] = useState(false);
+
+  // Open communications modal when triggered from parent
   useEffect(() => {
-    // Detect when prop changes from false/undefined to true
-    if (openCommunicationsModal && !prevOpenCommunicationsModal.current) {
+    if (openCommunicationsModal) {
       setShowCommunicationsModal(true);
-      // Reset the parent trigger
+      // Reset the parent trigger immediately
       onCommunicationsModalOpened?.();
     }
-    prevOpenCommunicationsModal.current = openCommunicationsModal;
   }, [openCommunicationsModal, onCommunicationsModalOpened]);
 
   // Filter templates to outreach types only
@@ -1595,6 +1605,19 @@ function ReadingPane({
     setUsePreviousSlots(false);
     setPendingOfferedSlots([]);
   }, [client.id]);
+
+  // Reset communications modal when client changes
+  // Use a ref to track the previous client ID so we only close on actual client change
+  const prevClientIdRef = useRef(client.id);
+  useEffect(() => {
+    if (prevClientIdRef.current !== client.id) {
+      // Client changed - close modal unless it's being opened for the new client
+      if (!openCommunicationsModal) {
+        setShowCommunicationsModal(false);
+      }
+      prevClientIdRef.current = client.id;
+    }
+  }, [client.id, openCommunicationsModal]);
 
   // Auto-initialize outreach attempts if client is in outreach workflow but has no attempts
   // This handles cases where emails were sent before the attempt tracking was properly set up
@@ -1756,6 +1779,51 @@ ${slotLines.join("\n")}
     setAttachments((prev) => prev.filter((_, i) => i !== index));
   };
 
+  // Handle scheduling appointment
+  const handleScheduleAppointment = async (appointment: ScheduledAppointment) => {
+    setIsScheduling(true);
+    try {
+      // If from offered slot, create a booked slot record
+      if (appointment.fromOfferedSlot && appointment.slotId) {
+        await createBookedSlot.mutateAsync({
+          slotId: appointment.slotId,
+          day: appointment.day,
+          time: appointment.time,
+          clinician: appointment.clinician,
+          clientId: client.id,
+        });
+      }
+
+      // Update client with scheduled appointment and change status
+      await updateClientMutation.mutateAsync({
+        id: client.id,
+        data: {
+          scheduledAppointment: JSON.stringify(appointment),
+          status: "ready_to_schedule",
+          assignedClinician: appointment.clinician,
+        },
+      });
+
+      // Close modals and show success
+      setShowSchedulingModal(false);
+      setShowCommunicationsModal(false);
+      addToast({
+        type: "success",
+        title: "Appointment Scheduled",
+        message: `${client.firstName} ${client.lastName} scheduled for ${appointment.day} at ${appointment.time}`,
+      });
+    } catch (error) {
+      addToast({
+        type: "error",
+        title: "Scheduling Failed",
+        message: error instanceof Error ? error.message : "Failed to schedule appointment",
+      });
+      throw error;
+    } finally {
+      setIsScheduling(false);
+    }
+  };
+
   const handleSendEmail = async () => {
     if (!editedTo || !editedSubject || !editedBody) {
       addToast({
@@ -1817,6 +1885,8 @@ ${slotLines.join("\n")}
 
       // Save offered availability if any NEW slots were selected
       // Don't save if we're reusing previous slots (they're already saved)
+      console.log("handleSendEmail - pendingOfferedSlots:", pendingOfferedSlots);
+      console.log("handleSendEmail - usePreviousSlots:", usePreviousSlots);
       if (pendingOfferedSlots.length > 0 && !usePreviousSlots) {
         const now = new Date().toISOString();
         const newOfferedSlots: OfferedSlot[] = pendingOfferedSlots.map((slot) => ({
@@ -1838,13 +1908,21 @@ ${slotLines.join("\n")}
         }
 
         const allOfferedSlots = [...existingSlots, ...newOfferedSlots];
+        console.log("Saving offered slots:", allOfferedSlots);
 
-        await updateClientMutation.mutateAsync({
-          id: client.id,
-          data: {
-            offeredAvailability: JSON.stringify(allOfferedSlots),
-          },
-        });
+        try {
+          await updateClientMutation.mutateAsync({
+            id: client.id,
+            data: {
+              offeredAvailability: JSON.stringify(allOfferedSlots),
+            },
+          });
+          console.log("Successfully saved offered slots to client");
+        } catch (saveError) {
+          console.error("Failed to save offered slots:", saveError);
+        }
+      } else {
+        console.log("Not saving offered slots - pendingOfferedSlots.length:", pendingOfferedSlots.length, "usePreviousSlots:", usePreviousSlots);
       }
 
       // Clear pending slots and reset usePreviousSlots
@@ -2081,12 +2159,12 @@ ${slotLines.join("\n")}
 
         {/* Action Buttons */}
         <button
-          onClick={onMoveToScheduling}
+          onClick={() => setShowSchedulingModal(true)}
           className="flex items-center gap-2 px-3 py-2 text-green-700 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-          title="Client responded - ready to schedule"
+          title="Schedule appointment for this client"
         >
-          <Reply className="w-4 h-4" />
-          Client Replied
+          <Calendar className="w-4 h-4" />
+          Move to Scheduling
         </button>
 
         <button
@@ -2517,14 +2595,19 @@ ${slotLines.join("\n")}
         client={client}
         onInsertAvailability={(text, selectedSlots) => {
           // Track selected slots for when email is sent
+          console.log("AvailabilityModal callback - selectedSlots:", selectedSlots);
+          console.log("AvailabilityModal callback - showCommunicationsModal:", showCommunicationsModal);
+          console.log("AvailabilityModal callback - showEmailPreview:", showEmailPreview);
           setPendingOfferedSlots(selectedSlots);
 
           // If communications modal is open, update communications availability state
           if (showCommunicationsModal) {
+            console.log("Setting communicationsSelectedAvailability for modal display");
             const slotStrings = selectedSlots.map(
               (slot) => `${slot.day} at ${slot.time} with ${slot.clinicians.join(" or ")}`
             );
             setCommunicationsSelectedAvailability(slotStrings);
+            console.log("communicationsSelectedAvailability set to:", slotStrings);
           }
 
           // If email preview is open and in edit mode, append to body
@@ -2803,11 +2886,62 @@ ${slotLines.join("\n")}
         onOpenAvailabilityModal={() => setShowAvailabilityModal(true)}
         selectedAvailability={communicationsSelectedAvailability}
         onClearAvailability={() => setCommunicationsSelectedAvailability([])}
+        onMoveToScheduling={() => setShowSchedulingModal(true)}
+        onEmailSentWithSlots={async () => {
+          // Use ref to get current value (avoids stale closure bug)
+          const slotsToSave = pendingOfferedSlotsRef.current;
+          console.log("onEmailSentWithSlots called, slots to save:", slotsToSave);
+
+          // Save offered slots when email is sent from communications modal
+          if (slotsToSave.length > 0) {
+            const now = new Date().toISOString();
+            const newOfferedSlots: OfferedSlot[] = slotsToSave.map((slot) => ({
+              slotId: slot.slotId,
+              day: slot.day,
+              time: slot.time,
+              clinicians: slot.clinicians,
+              offeredAt: now,
+            }));
+
+            // Parse existing offered slots and append new ones
+            let existingSlots: OfferedSlot[] = [];
+            if (client.offeredAvailability) {
+              try {
+                existingSlots = JSON.parse(client.offeredAvailability);
+              } catch {
+                // Invalid JSON, start fresh
+              }
+            }
+
+            const allOfferedSlots = [...existingSlots, ...newOfferedSlots];
+            console.log("Saving offered slots to client:", allOfferedSlots);
+
+            await updateClientMutation.mutateAsync({
+              id: client.id,
+              data: {
+                offeredAvailability: JSON.stringify(allOfferedSlots),
+              },
+            });
+
+            // Clear pending slots
+            setPendingOfferedSlots([]);
+            setCommunicationsSelectedAvailability([]);
+          }
+        }}
         outreachStats={{
           attemptsSent: outreachAttempts.filter((a) => a.status === "sent").length,
           totalAttempts: outreachAttempts.length,
           nextFollowUpDue: outreachAttempts.find((a) => a.status === "pending")?.id,
         }}
+      />
+
+      {/* Scheduling Modal */}
+      <SchedulingModal
+        client={client}
+        isOpen={showSchedulingModal}
+        onClose={() => setShowSchedulingModal(false)}
+        onSchedule={handleScheduleAppointment}
+        isLoading={isScheduling}
       />
     </div>
   );

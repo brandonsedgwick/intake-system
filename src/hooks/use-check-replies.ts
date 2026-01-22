@@ -66,6 +66,15 @@ export function useCheckReplies() {
         queryClient.invalidateQueries({ queryKey: ["outreach-attempts"] });
       }
 
+      // If any replies were found, invalidate communications for those clients
+      if (data.summary?.repliesFound > 0) {
+        data.results
+          .filter((r: CheckReplyResult) => r.hasReply)
+          .forEach((r: CheckReplyResult) => {
+            queryClient.invalidateQueries({ queryKey: ["communications", r.clientId] });
+          });
+      }
+
       return data;
     },
     // Auto-polling configuration
@@ -101,6 +110,16 @@ export function useManualCheckReplies() {
         queryClient.invalidateQueries({ queryKey: ["clients"] });
         queryClient.invalidateQueries({ queryKey: ["outreach-attempts"] });
       }
+
+      // If any replies were found, invalidate communications for those clients
+      if (data.summary?.repliesFound && data.summary.repliesFound > 0) {
+        data.results
+          .filter((r) => r.hasReply)
+          .forEach((r) => {
+            queryClient.invalidateQueries({ queryKey: ["communications", r.clientId] });
+          });
+      }
+
       // Also update the check-replies cache
       queryClient.setQueryData(["check-replies"], data);
     },
@@ -133,6 +152,8 @@ export function useCheckClientReplies() {
       });
       // Also invalidate the main clients list
       queryClient.invalidateQueries({ queryKey: ["clients"] });
+      // Invalidate communications for this client (new replies create communication records)
+      queryClient.invalidateQueries({ queryKey: ["communications", clientId] });
     },
   });
 }

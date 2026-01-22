@@ -193,6 +193,8 @@ export const clientsDbApi = {
         closedReason: updates.closedReason !== undefined ? updates.closedReason || null : existing.closedReason,
         closedFromWorkflow: updates.closedFromWorkflow !== undefined ? updates.closedFromWorkflow || null : existing.closedFromWorkflow,
         closedFromStatus: updates.closedFromStatus !== undefined ? updates.closedFromStatus || null : existing.closedFromStatus,
+        offeredAvailability: updates.offeredAvailability !== undefined ? updates.offeredAvailability || null : existing.offeredAvailability,
+        acceptedSlot: updates.acceptedSlot !== undefined ? updates.acceptedSlot || null : existing.acceptedSlot,
       },
     });
     return dbClientToClient(c);
@@ -256,6 +258,8 @@ function dbClientToClient(c: {
   closedReason: string | null;
   closedFromWorkflow: string | null;
   closedFromStatus: string | null;
+  offeredAvailability: string | null;
+  acceptedSlot: string | null;
 }): Client {
   return {
     id: c.id,
@@ -299,6 +303,8 @@ function dbClientToClient(c: {
     closedReason: c.closedReason || undefined,
     closedFromWorkflow: c.closedFromWorkflow as ClosedFromWorkflow || undefined,
     closedFromStatus: c.closedFromStatus as ClientStatus || undefined,
+    offeredAvailability: c.offeredAvailability || undefined,
+    acceptedSlot: c.acceptedSlot || undefined,
   };
 }
 

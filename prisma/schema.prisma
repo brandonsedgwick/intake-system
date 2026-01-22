@@ -303,8 +303,9 @@ model Client {
   referralClinicNames  String? // Comma-separated list of clinic names
 
   // Availability Tracking
-  offeredAvailability String? // JSON array of OfferedSlot objects
-  acceptedSlot        String? // JSON object of AcceptedSlot (single slot client accepted)
+  offeredAvailability  String? // JSON array of OfferedSlot objects
+  acceptedSlot         String? // JSON object of AcceptedSlot (single slot client accepted)
+  scheduledAppointment String? // JSON object of ScheduledAppointment (full scheduling details)
 
   // Closure
   closedDate         String?
