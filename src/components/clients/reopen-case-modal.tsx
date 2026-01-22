@@ -36,6 +36,7 @@ const STATUS_LABELS: Record<ClientStatus, string> = {
   follow_up_due: "Follow-up Due",
   no_contact_ok_close: "No Contact - OK to Close",
   in_communication: "In Communication",
+  awaiting_paperwork: "Awaiting Paperwork",
 };
 
 // Group statuses by workflow for organized dropdown

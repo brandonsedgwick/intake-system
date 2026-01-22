@@ -38,6 +38,7 @@ const STATUS_LABELS: Record<ClientStatus, string> = {
   follow_up_due: "Follow-up Due",
   no_contact_ok_close: "No Contact - OK to Close",
   in_communication: "In Communication",
+  awaiting_paperwork: "Awaiting Paperwork",
 };
 
 // Status badge colors
@@ -65,6 +66,7 @@ const STATUS_BADGE_COLORS: Record<ClientStatus, { bg: string; text: string }> = 
   follow_up_due: { bg: "bg-amber-100", text: "text-amber-700" },
   no_contact_ok_close: { bg: "bg-red-100", text: "text-red-700" },
   in_communication: { bg: "bg-green-100", text: "text-green-700" },
+  awaiting_paperwork: { bg: "bg-purple-100", text: "text-purple-700" },
 };
 
 interface ClosedCasesSectionProps {

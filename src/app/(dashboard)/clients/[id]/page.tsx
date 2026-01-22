@@ -81,6 +81,7 @@ const STATUS_CONFIG: Record<
   follow_up_due: { label: "Follow-up Due", color: "text-amber-700", bgColor: "bg-amber-100" },
   no_contact_ok_close: { label: "No Contact - OK to Close", color: "text-red-700", bgColor: "bg-red-100" },
   in_communication: { label: "In Communication", color: "text-green-700", bgColor: "bg-green-100" },
+  awaiting_paperwork: { label: "Awaiting Paperwork", color: "text-purple-700", bgColor: "bg-purple-100" },
 };
 
 // Workflow labels for closed case display

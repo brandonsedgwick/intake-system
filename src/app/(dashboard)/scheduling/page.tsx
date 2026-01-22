@@ -5,6 +5,8 @@ import { useClients, useUpdateClient } from "@/hooks/use-clients";
 import { Client, ClientStatus, ScheduledAppointment, SchedulingProgress } from "@/types/client";
 import { SchedulingTable } from "@/components/scheduling/scheduling-table";
 import { SchedulingDetails } from "@/components/scheduling/scheduling-details";
+import { SchedulingCommunicationsModal } from "@/components/scheduling/scheduling-communications-modal";
+import { FinalizeModal } from "@/components/scheduling/finalize-modal";
 import { formatDate, cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
 import {
@@ -27,6 +29,8 @@ export default function SchedulingPage() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [communicationsModalClientId, setCommunicationsModalClientId] = useState<string | null>(null);
+  const [finalizeModalClientId, setFinalizeModalClientId] = useState<string | null>(null);
 
   // Filter clients in scheduling workflow
   const schedulingClients = useMemo(() => {
@@ -51,6 +55,18 @@ export default function SchedulingPage() {
     if (!selectedClientId) return filteredClients[0] || null;
     return filteredClients.find((c) => c.id === selectedClientId) || filteredClients[0] || null;
   }, [selectedClientId, filteredClients]);
+
+  // Get client for communications modal
+  const communicationsModalClient = useMemo(() => {
+    if (!communicationsModalClientId) return null;
+    return filteredClients.find((c) => c.id === communicationsModalClientId) || null;
+  }, [communicationsModalClientId, filteredClients]);
+
+  // Get client for finalize modal
+  const finalizeModalClient = useMemo(() => {
+    if (!finalizeModalClientId) return null;
+    return filteredClients.find((c) => c.id === finalizeModalClientId) || null;
+  }, [finalizeModalClientId, filteredClients]);
 
   // Count by status
   const statusCounts = useMemo(() => {
@@ -122,8 +138,13 @@ export default function SchedulingPage() {
     }
   };
 
-  // Handle finalize - sets status to indicate paperwork needs completion (to be defined later)
-  const handleFinalize = async (clientId: string) => {
+  // Handle finalize button click - opens finalize modal
+  const handleFinalizeClick = (clientId: string) => {
+    setFinalizeModalClientId(clientId);
+  };
+
+  // Handle actual finalize - sends email and updates status to awaiting_paperwork
+  const handleActualFinalize = async (clientId: string) => {
     const client = filteredClients.find((c) => c.id === clientId);
     if (!client) return;
 
@@ -155,13 +176,13 @@ export default function SchedulingPage() {
         id: clientId,
         data: {
           schedulingProgress: JSON.stringify(progress),
-          // Status transition to be defined - for now just mark finalized in progress
+          status: "awaiting_paperwork", // Move to paperwork workflow
         },
       });
       addToast({
         type: "success",
         title: "Client finalized",
-        message: "Scheduling workflow completed for this client.",
+        message: "Email sent. Client moved to Awaiting Paperwork.",
       });
       refetch();
     } catch (error) {
@@ -238,7 +259,7 @@ export default function SchedulingPage() {
               selectedClientId={selectedClient?.id || null}
               onSelectClient={setSelectedClientId}
               onProgressUpdate={handleProgressUpdate}
-              onFinalize={handleFinalize}
+              onFinalize={handleFinalizeClick}
             />
           )}
         </div>
@@ -249,7 +270,8 @@ export default function SchedulingPage() {
             <SchedulingDetails
               client={selectedClient}
               onProgressUpdate={handleProgressUpdate}
-              onFinalize={handleFinalize}
+              onFinalize={handleFinalizeClick}
+              onOpenCommunicationsModal={() => setCommunicationsModalClientId(selectedClient.id)}
             />
           ) : (
             <div className="flex items-center justify-center h-full">
@@ -266,6 +288,28 @@ export default function SchedulingPage() {
           )}
         </div>
       </div>
+
+      {/* Communications Modal */}
+      {communicationsModalClient && (
+        <SchedulingCommunicationsModal
+          client={communicationsModalClient}
+          isOpen={!!communicationsModalClient}
+          onClose={() => setCommunicationsModalClientId(null)}
+        />
+      )}
+
+      {/* Finalize Modal */}
+      {finalizeModalClient && (
+        <FinalizeModal
+          client={finalizeModalClient}
+          isOpen={!!finalizeModalClient}
+          onClose={() => setFinalizeModalClientId(null)}
+          onFinalize={async () => {
+            await handleActualFinalize(finalizeModalClient.id);
+          }}
+          isLoading={updateClient.isPending}
+        />
+      )}
     </div>
   );
 }

@@ -155,6 +155,11 @@ const statusConfig: Record<
     bgColor: "bg-green-100",
     textColor: "text-green-700",
   },
+  awaiting_paperwork: {
+    label: "Awaiting Paperwork",
+    bgColor: "bg-purple-100",
+    textColor: "text-purple-700",
+  },
 };
 
 function getInitials(firstName: string, lastName: string) {

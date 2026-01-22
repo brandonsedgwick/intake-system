@@ -138,6 +138,11 @@ const STATUS_CONFIG: Record<
     color: "bg-green-100 text-green-800",
     icon: <CheckCircle className="w-3 h-3" />,
   },
+  awaiting_paperwork: {
+    label: "Awaiting Paperwork",
+    color: "bg-purple-100 text-purple-800",
+    icon: <Clock className="w-3 h-3" />,
+  },
 };
 
 function StatusBadge({ status }: { status: ClientStatus }) {

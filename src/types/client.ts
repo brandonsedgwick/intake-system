@@ -10,6 +10,7 @@ export type ClientStatus =
   | "replied"
   | "ready_to_schedule"
   | "awaiting_scheduling"  // Client moved to scheduling, steps in progress
+  | "awaiting_paperwork"   // Scheduling finalized, waiting for client to complete paperwork
   | "scheduled"
   | "completed"
   | "pending_referral"
@@ -54,7 +55,7 @@ export const WORKFLOW_STATUS_MAP: Record<ClosedFromWorkflow, ClientStatus[]> = {
     "in_communication",
   ],
   referral: ["pending_referral", "referred"],
-  scheduling: ["ready_to_schedule", "awaiting_scheduling", "scheduled", "completed"],
+  scheduling: ["ready_to_schedule", "awaiting_scheduling", "awaiting_paperwork", "scheduled", "completed"],
   other: ["duplicate", "closed_other"],
 };
 
@@ -72,6 +73,7 @@ export function getNonClosedStatuses(): ClientStatus[] {
     "replied",
     "ready_to_schedule",
     "awaiting_scheduling",
+    "awaiting_paperwork",
     "scheduled",
     "pending_referral",
     "awaiting_response",

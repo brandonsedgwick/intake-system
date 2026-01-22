@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { Client, ScheduledAppointment, SchedulingProgress } from "@/types/client";
+import { Client, ScheduledAppointment, SchedulingProgress, OfferedSlot } from "@/types/client";
 import { cn, formatDate } from "@/lib/utils";
 import {
   Calendar,
@@ -15,6 +15,9 @@ import {
   Check,
   ExternalLink,
   XCircle,
+  MessagesSquare,
+  Clock,
+  Plus,
 } from "lucide-react";
 
 // Type for the boolean progress steps (not the timestamp fields)
@@ -28,6 +31,8 @@ interface SchedulingDetailsProps {
     value: boolean
   ) => void;
   onFinalize: (clientId: string) => void;
+  onOpenCommunicationsModal?: () => void;
+  onOfferNewAvailability?: () => void; // TODO: Implement Offer New Availability feature
 }
 
 // Get initials from name
@@ -86,14 +91,39 @@ function formatRecurrence(recurrence: string | undefined): string {
   }
 }
 
+// Parse offered availability from client
+function parseOfferedSlots(client: Client): OfferedSlot[] {
+  if (!client.offeredAvailability) return [];
+  try {
+    return JSON.parse(client.offeredAvailability) as OfferedSlot[];
+  } catch {
+    return [];
+  }
+}
+
 export function SchedulingDetails({
   client,
   onProgressUpdate,
   onFinalize,
+  onOpenCommunicationsModal,
+  onOfferNewAvailability,
 }: SchedulingDetailsProps) {
   const appointment = parseScheduledAppointment(client);
   const progress = parseSchedulingProgress(client);
   const initials = getInitials(client.firstName, client.lastName);
+  const offeredSlots = parseOfferedSlots(client);
+
+  // Group offered slots by date
+  const slotsByDate = useMemo(() => {
+    return offeredSlots.reduce((acc, slot) => {
+      const date = new Date(slot.offeredAt).toLocaleDateString();
+      if (!acc[date]) {
+        acc[date] = [];
+      }
+      acc[date].push(slot);
+      return acc;
+    }, {} as Record<string, OfferedSlot[]>);
+  }, [offeredSlots]);
 
   // Progress steps
   const progressSteps = [
@@ -122,9 +152,9 @@ export function SchedulingDetails({
   const completedSteps = progressSteps.filter((s) => s.completed).length;
 
   return (
-    <div className="bg-white rounded-xl border shadow-sm">
+    <div className="bg-white rounded-xl border shadow-sm flex flex-col h-full">
       {/* Header */}
-      <div className="px-6 py-4 border-b flex items-center justify-between">
+      <div className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-4">
           <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center text-green-700 font-semibold text-xl">
             {initials}
@@ -172,8 +202,19 @@ export function SchedulingDetails({
         </div>
       </div>
 
+      {/* Quick Action Bar */}
+      <div className="px-6 py-3 border-b flex-shrink-0 bg-gray-50 flex items-center gap-3">
+        <button
+          onClick={onOpenCommunicationsModal}
+          className="px-4 py-2 text-sm font-medium text-green-700 bg-green-100 hover:bg-green-200 rounded-lg transition-colors inline-flex items-center gap-2"
+        >
+          <MessagesSquare className="w-4 h-4" />
+          View Communications
+        </button>
+      </div>
+
       {/* Details Content Grid */}
-      <div className="p-6 grid grid-cols-3 gap-6">
+      <div className="p-6 grid grid-cols-3 gap-6 flex-1 overflow-y-auto">
         {/* Appointment Details */}
         <div className="bg-green-50 rounded-lg p-4 border border-green-100">
           <h3 className="text-sm font-semibold text-green-800 mb-3 flex items-center gap-2">
@@ -304,13 +345,63 @@ export function SchedulingDetails({
           </div>
         )}
 
-        {/* Quick Actions */}
-        <div
-          className={cn(
-            "bg-white rounded-lg p-4 border",
-            appointment?.communicationNote ? "" : "col-span-1"
+        {/* Offered Availability */}
+        <div className="bg-amber-50 rounded-lg p-4 border border-amber-100">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-amber-800 flex items-center gap-2">
+              <Clock className="w-4 h-4" />
+              Offered Availability
+              {offeredSlots.length > 0 && (
+                <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                  {offeredSlots.length} slot{offeredSlots.length !== 1 ? "s" : ""}
+                </span>
+              )}
+            </h3>
+            <button
+              onClick={onOfferNewAvailability}
+              className="px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 rounded-lg transition-colors inline-flex items-center gap-1"
+            >
+              <Plus className="w-3 h-3" />
+              Offer New Availability
+            </button>
+          </div>
+          {offeredSlots.length > 0 ? (
+            <div className="space-y-2 max-h-32 overflow-y-auto">
+              {Object.entries(slotsByDate)
+                .sort(([a], [b]) => new Date(b).getTime() - new Date(a).getTime())
+                .map(([date, slots]) => (
+                  <div key={date}>
+                    <p className="text-xs font-medium text-amber-700 mb-1">
+                      Offered {date}
+                    </p>
+                    <ul className="space-y-1">
+                      {slots.map((slot, idx) => (
+                        <li
+                          key={`${slot.slotId}-${idx}`}
+                          className="text-sm text-amber-900 flex items-start gap-2 bg-white/50 rounded px-2 py-1"
+                        >
+                          <span className="text-amber-500 mt-0.5">•</span>
+                          <span>
+                            {slot.day} at {slot.time}
+                            <span className="text-amber-700 ml-1">
+                              — {slot.clinicians.join(", ")}
+                            </span>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+            </div>
+          ) : (
+            <p className="text-sm text-amber-700 italic">
+              No availability has been offered yet
+            </p>
           )}
-        >
+        </div>
+
+        {/* Quick Actions */}
+        <div className="bg-white rounded-lg p-4 border">
           <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
             <FileText className="w-4 h-4 text-gray-400" />
             Quick Actions
