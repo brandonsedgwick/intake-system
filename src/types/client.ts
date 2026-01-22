@@ -9,6 +9,7 @@ export type ClientStatus =
   | "follow_up_2"
   | "replied"
   | "ready_to_schedule"
+  | "awaiting_scheduling"  // Client moved to scheduling, steps in progress
   | "scheduled"
   | "completed"
   | "pending_referral"
@@ -53,7 +54,7 @@ export const WORKFLOW_STATUS_MAP: Record<ClosedFromWorkflow, ClientStatus[]> = {
     "in_communication",
   ],
   referral: ["pending_referral", "referred"],
-  scheduling: ["ready_to_schedule", "scheduled", "completed"],
+  scheduling: ["ready_to_schedule", "awaiting_scheduling", "scheduled", "completed"],
   other: ["duplicate", "closed_other"],
 };
 
@@ -70,6 +71,7 @@ export function getNonClosedStatuses(): ClientStatus[] {
     "follow_up_2",
     "replied",
     "ready_to_schedule",
+    "awaiting_scheduling",
     "scheduled",
     "pending_referral",
     "awaiting_response",
@@ -139,6 +141,7 @@ export interface Client {
   offeredAvailability?: string; // JSON string of OfferedSlot[]
   acceptedSlot?: string; // JSON string of AcceptedSlot
   scheduledAppointment?: string; // JSON string of ScheduledAppointment
+  schedulingProgress?: string; // JSON string of SchedulingProgress
 
   // Closure
   closedDate?: string;
@@ -217,6 +220,18 @@ export interface AcceptedSlot {
 
 // Recurrence pattern options for scheduled appointments
 export type RecurrencePattern = "weekly" | "bi-weekly" | "monthly" | "one-time";
+
+// Scheduling progress tracking - tracks each step in the scheduling workflow
+export interface SchedulingProgress {
+  clientCreated: boolean;
+  clientCreatedAt?: string;
+  screenerUploaded: boolean;
+  screenerUploadedAt?: string;
+  appointmentCreated: boolean;
+  appointmentCreatedAt?: string;
+  finalized: boolean;
+  finalizedAt?: string;
+}
 
 // Scheduled appointment - when moving client to scheduling
 export interface ScheduledAppointment {

@@ -306,6 +306,7 @@ model Client {
   offeredAvailability  String? // JSON array of OfferedSlot objects
   acceptedSlot         String? // JSON object of AcceptedSlot (single slot client accepted)
   scheduledAppointment String? // JSON object of ScheduledAppointment (full scheduling details)
+  schedulingProgress   String? // JSON object of SchedulingProgress (tracks scheduling workflow steps)
 
   // Closure
   closedDate         String?

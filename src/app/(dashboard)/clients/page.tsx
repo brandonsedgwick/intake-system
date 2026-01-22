@@ -77,6 +77,11 @@ const STATUS_CONFIG: Record<
     color: "bg-teal-100 text-teal-800",
     icon: <Calendar className="w-3 h-3" />,
   },
+  awaiting_scheduling: {
+    label: "Awaiting Scheduling",
+    color: "bg-amber-100 text-amber-800",
+    icon: <Clock className="w-3 h-3" />,
+  },
   scheduled: {
     label: "Scheduled",
     color: "bg-emerald-100 text-emerald-800",

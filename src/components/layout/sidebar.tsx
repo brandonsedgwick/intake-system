@@ -50,7 +50,10 @@ export function Sidebar() {
     ).length;
 
     const scheduling = clients.filter(
-      (c) => c.status === "ready_to_schedule" || c.status === "replied"
+      (c) =>
+        c.status === "ready_to_schedule" ||
+        c.status === "awaiting_scheduling" ||
+        c.status === "replied"
     ).length;
 
     const referrals = clients.filter(

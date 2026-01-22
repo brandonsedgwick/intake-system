@@ -1794,13 +1794,22 @@ ${slotLines.join("\n")}
         });
       }
 
+      // Initialize scheduling progress
+      const initialProgress = {
+        clientCreated: false,
+        screenerUploaded: false,
+        appointmentCreated: false,
+        finalized: false,
+      };
+
       // Update client with scheduled appointment and change status
       await updateClientMutation.mutateAsync({
         id: client.id,
         data: {
           scheduledAppointment: JSON.stringify(appointment),
-          status: "ready_to_schedule",
+          status: "awaiting_scheduling",
           assignedClinician: appointment.clinician,
+          schedulingProgress: JSON.stringify(initialProgress),
         },
       });
 
@@ -3496,13 +3505,22 @@ export default function OutreachPage() {
         acceptedAt: new Date().toISOString(),
       };
 
+      // Initialize scheduling progress
+      const initialProgress = {
+        clientCreated: false,
+        screenerUploaded: false,
+        appointmentCreated: false,
+        finalized: false,
+      };
+
       // Update client with accepted slot and move to scheduling
       await updateClient.mutateAsync({
         id: acceptanceClient.id,
         data: {
-          status: "ready_to_schedule",
+          status: "awaiting_scheduling",
           acceptedSlot: JSON.stringify(acceptedSlot),
           assignedClinician: clinician,
+          schedulingProgress: JSON.stringify(initialProgress),
         },
       });
 
@@ -3529,10 +3547,19 @@ export default function OutreachPage() {
     if (!acceptanceClient) return;
 
     try {
+      // Initialize scheduling progress
+      const initialProgress = {
+        clientCreated: false,
+        screenerUploaded: false,
+        appointmentCreated: false,
+        finalized: false,
+      };
+
       await updateClient.mutateAsync({
         id: acceptanceClient.id,
         data: {
-          status: "ready_to_schedule",
+          status: "awaiting_scheduling",
+          schedulingProgress: JSON.stringify(initialProgress),
         },
       });
 

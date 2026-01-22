@@ -68,6 +68,7 @@ const STATUS_CONFIG: Record<
   follow_up_2: { label: "Follow-up 2", color: "text-red-700", bgColor: "bg-red-100" },
   replied: { label: "Replied", color: "text-green-700", bgColor: "bg-green-100" },
   ready_to_schedule: { label: "Ready to Schedule", color: "text-teal-700", bgColor: "bg-teal-100" },
+  awaiting_scheduling: { label: "Awaiting Scheduling", color: "text-amber-700", bgColor: "bg-amber-100" },
   scheduled: { label: "Scheduled", color: "text-emerald-700", bgColor: "bg-emerald-100" },
   completed: { label: "Completed", color: "text-gray-700", bgColor: "bg-gray-100" },
   pending_referral: { label: "Pending Referral", color: "text-amber-700", bgColor: "bg-amber-100" },

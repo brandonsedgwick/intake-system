@@ -195,6 +195,8 @@ export const clientsDbApi = {
         closedFromStatus: updates.closedFromStatus !== undefined ? updates.closedFromStatus || null : existing.closedFromStatus,
         offeredAvailability: updates.offeredAvailability !== undefined ? updates.offeredAvailability || null : existing.offeredAvailability,
         acceptedSlot: updates.acceptedSlot !== undefined ? updates.acceptedSlot || null : existing.acceptedSlot,
+        scheduledAppointment: updates.scheduledAppointment !== undefined ? updates.scheduledAppointment || null : existing.scheduledAppointment,
+        schedulingProgress: updates.schedulingProgress !== undefined ? updates.schedulingProgress || null : existing.schedulingProgress,
       },
     });
     return dbClientToClient(c);
@@ -260,6 +262,8 @@ function dbClientToClient(c: {
   closedFromStatus: string | null;
   offeredAvailability: string | null;
   acceptedSlot: string | null;
+  scheduledAppointment: string | null;
+  schedulingProgress: string | null;
 }): Client {
   return {
     id: c.id,
@@ -305,6 +309,8 @@ function dbClientToClient(c: {
     closedFromStatus: c.closedFromStatus as ClientStatus || undefined,
     offeredAvailability: c.offeredAvailability || undefined,
     acceptedSlot: c.acceptedSlot || undefined,
+    scheduledAppointment: c.scheduledAppointment || undefined,
+    schedulingProgress: c.schedulingProgress || undefined,
   };
 }
 

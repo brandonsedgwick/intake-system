@@ -23,6 +23,7 @@ const STATUS_LABELS: Record<ClientStatus, string> = {
   follow_up_2: "Follow-up 2",
   replied: "Replied",
   ready_to_schedule: "Ready to Schedule",
+  awaiting_scheduling: "Awaiting Scheduling",
   scheduled: "Scheduled",
   completed: "Completed",
   pending_referral: "Pending Referral",

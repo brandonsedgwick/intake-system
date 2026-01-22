@@ -94,6 +94,11 @@ const statusConfig: Record<
     bgColor: "bg-teal-100",
     textColor: "text-teal-700",
   },
+  awaiting_scheduling: {
+    label: "Awaiting Scheduling",
+    bgColor: "bg-amber-100",
+    textColor: "text-amber-700",
+  },
   scheduled: {
     label: "Scheduled",
     bgColor: "bg-emerald-100",
