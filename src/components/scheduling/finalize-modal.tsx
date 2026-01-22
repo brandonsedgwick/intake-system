@@ -224,6 +224,43 @@ export function FinalizeModal({
     setAttachments((prev) => prev.filter((_, i) => i !== index));
   };
 
+  // Build the quoted email thread to include in the reply
+  const buildQuotedThread = (): string => {
+    if (sortedCommunications.length === 0) return "";
+
+    // Get the most recent message to quote (typically the last incoming or outgoing)
+    const lastMessage = sortedCommunications[sortedCommunications.length - 1];
+    if (!lastMessage) return "";
+
+    const formatQuoteDate = (dateStr: string) => {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString("en-US", {
+        weekday: "short",
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    };
+
+    // Build the quoted content
+    const senderInfo = lastMessage.direction === "out"
+      ? (lastMessage.sentBy || "Staff")
+      : `${client.firstName} ${client.lastName}`;
+
+    const quoteHeader = `On ${formatQuoteDate(lastMessage.timestamp)}, ${senderInfo} wrote:`;
+    const messageContent = lastMessage.fullBody || lastMessage.bodyPreview || "";
+
+    // Add blockquote styling for HTML emails
+    return `
+<br><br>
+<div style="border-left: 2px solid #ccc; padding-left: 12px; margin-left: 0; color: #666;">
+  <p style="margin: 0 0 8px 0; font-size: 12px;">${quoteHeader}</p>
+  <div>${messageContent}</div>
+</div>`;
+  };
+
   // Handle send and finalize
   const handleSendAndFinalize = async () => {
     if (!subject.trim() || !body.trim()) {
@@ -235,6 +272,10 @@ export function FinalizeModal({
     setSendError(null);
 
     try {
+      // Build the full email body with quoted thread
+      const quotedThread = buildQuotedThread();
+      const fullBody = body + quotedThread;
+
       // Send the email
       await sendEmail.mutateAsync({
         clientId: client.id,
@@ -242,7 +283,7 @@ export function FinalizeModal({
         cc: cc || undefined,
         bcc: bcc || undefined,
         subject,
-        body,
+        body: fullBody,
         bodyFormat: "html",
         attachments: attachments.length > 0 ? attachments : undefined,
       });
@@ -259,9 +300,11 @@ export function FinalizeModal({
     }
   };
 
-  // Strip HTML for preview
+  // Strip HTML for preview (shows full email including quoted thread)
   const getPreviewBody = () => {
-    return body
+    const quotedThread = buildQuotedThread();
+    const fullBody = body + quotedThread;
+    return fullBody
       .replace(/<[^>]*>/g, "")
       .replace(/&nbsp;/g, " ")
       .replace(/&amp;/g, "&")
