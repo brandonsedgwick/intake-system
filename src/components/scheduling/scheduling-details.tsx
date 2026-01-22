@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import { Client, ScheduledAppointment, SchedulingProgress, OfferedSlot } from "@/types/client";
 import { cn, formatDate } from "@/lib/utils";
@@ -18,10 +18,17 @@ import {
   MessagesSquare,
   Clock,
   Plus,
+  ArrowLeft,
+  Share2,
+  X,
+  Loader2,
 } from "lucide-react";
 
 // Type for the boolean progress steps (not the timestamp fields)
 type SchedulingProgressStep = "clientCreated" | "screenerUploaded" | "appointmentCreated" | "finalized";
+
+// Type for move actions
+type MoveAction = "outreach" | "referral";
 
 interface SchedulingDetailsProps {
   client: Client;
@@ -33,6 +40,8 @@ interface SchedulingDetailsProps {
   onFinalize: (clientId: string) => void;
   onOpenCommunicationsModal?: () => void;
   onOfferNewAvailability?: () => void; // TODO: Implement Offer New Availability feature
+  onMoveToOutreach?: (clientId: string, reason: string) => Promise<void>;
+  onMoveToReferral?: (clientId: string, reason: string) => Promise<void>;
 }
 
 // Get initials from name
@@ -107,11 +116,50 @@ export function SchedulingDetails({
   onFinalize,
   onOpenCommunicationsModal,
   onOfferNewAvailability,
+  onMoveToOutreach,
+  onMoveToReferral,
 }: SchedulingDetailsProps) {
   const appointment = parseScheduledAppointment(client);
   const progress = parseSchedulingProgress(client);
   const initials = getInitials(client.firstName, client.lastName);
   const offeredSlots = parseOfferedSlots(client);
+
+  // Move action modal state
+  const [moveModalOpen, setMoveModalOpen] = useState(false);
+  const [moveAction, setMoveAction] = useState<MoveAction | null>(null);
+  const [moveReason, setMoveReason] = useState("");
+  const [isMoving, setIsMoving] = useState(false);
+
+  // Open move modal
+  const openMoveModal = (action: MoveAction) => {
+    setMoveAction(action);
+    setMoveReason("");
+    setMoveModalOpen(true);
+  };
+
+  // Close move modal
+  const closeMoveModal = () => {
+    setMoveModalOpen(false);
+    setMoveAction(null);
+    setMoveReason("");
+  };
+
+  // Handle move action
+  const handleMove = async () => {
+    if (!moveReason.trim() || !moveAction) return;
+
+    setIsMoving(true);
+    try {
+      if (moveAction === "outreach" && onMoveToOutreach) {
+        await onMoveToOutreach(client.id, moveReason.trim());
+      } else if (moveAction === "referral" && onMoveToReferral) {
+        await onMoveToReferral(client.id, moveReason.trim());
+      }
+      closeMoveModal();
+    } finally {
+      setIsMoving(false);
+    }
+  };
 
   // Group offered slots by date
   const slotsByDate = useMemo(() => {
@@ -203,14 +251,32 @@ export function SchedulingDetails({
       </div>
 
       {/* Quick Action Bar */}
-      <div className="px-6 py-3 border-b flex-shrink-0 bg-gray-50 flex items-center gap-3">
-        <button
-          onClick={onOpenCommunicationsModal}
-          className="px-4 py-2 text-sm font-medium text-green-700 bg-green-100 hover:bg-green-200 rounded-lg transition-colors inline-flex items-center gap-2"
-        >
-          <MessagesSquare className="w-4 h-4" />
-          View Communications
-        </button>
+      <div className="px-6 py-3 border-b flex-shrink-0 bg-gray-50 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onOpenCommunicationsModal}
+            className="px-4 py-2 text-sm font-medium text-green-700 bg-green-100 hover:bg-green-200 rounded-lg transition-colors inline-flex items-center gap-2"
+          >
+            <MessagesSquare className="w-4 h-4" />
+            View Communications
+          </button>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => openMoveModal("outreach")}
+            className="px-3 py-1.5 text-sm text-amber-700 hover:bg-amber-100 rounded-lg transition-colors inline-flex items-center gap-1.5"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Move to Outreach
+          </button>
+          <button
+            onClick={() => openMoveModal("referral")}
+            className="px-3 py-1.5 text-sm text-purple-700 hover:bg-purple-100 rounded-lg transition-colors inline-flex items-center gap-1.5"
+          >
+            <Share2 className="w-4 h-4" />
+            Move to Referral
+          </button>
+        </div>
       </div>
 
       {/* Details Content Grid */}
@@ -422,6 +488,114 @@ export function SchedulingDetails({
           </div>
         </div>
       </div>
+
+      {/* Move Action Modal */}
+      {moveModalOpen && moveAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={closeMoveModal}
+          />
+          <div className="relative bg-white w-full max-w-md rounded-xl shadow-2xl">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div
+                  className={cn(
+                    "w-10 h-10 rounded-full flex items-center justify-center",
+                    moveAction === "outreach"
+                      ? "bg-amber-100"
+                      : "bg-purple-100"
+                  )}
+                >
+                  {moveAction === "outreach" ? (
+                    <ArrowLeft className="w-5 h-5 text-amber-600" />
+                  ) : (
+                    <Share2 className="w-5 h-5 text-purple-600" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900">
+                    {moveAction === "outreach"
+                      ? "Move to Outreach"
+                      : "Move to Referral"}
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    {client.firstName} {client.lastName}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={closeMoveModal}
+                className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Reason for moving{" "}
+                <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                value={moveReason}
+                onChange={(e) => setMoveReason(e.target.value)}
+                placeholder={
+                  moveAction === "outreach"
+                    ? "e.g., Client needs more time slots, no response to current options..."
+                    : "e.g., Insurance not accepted, client needs specialized care..."
+                }
+                className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none h-32 text-sm"
+              />
+              <p className="mt-2 text-xs text-gray-500">
+                This reason will be saved to the client record.
+              </p>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t bg-gray-50 flex items-center justify-end gap-3 rounded-b-xl">
+              <button
+                onClick={closeMoveModal}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleMove}
+                disabled={!moveReason.trim() || isMoving}
+                className={cn(
+                  "px-4 py-2 text-sm font-medium text-white rounded-lg flex items-center gap-2",
+                  !moveReason.trim() || isMoving
+                    ? "bg-gray-400 cursor-not-allowed"
+                    : moveAction === "outreach"
+                    ? "bg-amber-600 hover:bg-amber-700"
+                    : "bg-purple-600 hover:bg-purple-700"
+                )}
+              >
+                {isMoving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Moving...
+                  </>
+                ) : (
+                  <>
+                    {moveAction === "outreach" ? (
+                      <ArrowLeft className="w-4 h-4" />
+                    ) : (
+                      <Share2 className="w-4 h-4" />
+                    )}
+                    {moveAction === "outreach"
+                      ? "Move to Outreach"
+                      : "Move to Referral"}
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

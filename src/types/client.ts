@@ -134,6 +134,7 @@ export interface Client {
   scheduledDate?: string;
   simplePracticeId?: string;
   paperworkComplete?: boolean;
+  schedulingNotes?: string; // Notes about scheduling changes (e.g., reason for moving to outreach/referral)
 
   // Referral
   referralEmailSentAt?: string;

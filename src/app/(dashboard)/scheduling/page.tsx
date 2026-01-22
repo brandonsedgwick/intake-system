@@ -194,6 +194,67 @@ export default function SchedulingPage() {
     }
   };
 
+  // Handle move to outreach
+  const handleMoveToOutreach = async (clientId: string, reason: string) => {
+    try {
+      await updateClient.mutateAsync({
+        id: clientId,
+        data: {
+          status: "pending_outreach",
+          schedulingNotes: reason,
+          // Clear scheduling-related fields
+          scheduledAppointment: undefined,
+          schedulingProgress: undefined,
+        },
+      });
+      addToast({
+        type: "success",
+        title: "Moved to Outreach",
+        message: "Client has been moved back to the outreach workflow.",
+      });
+      setSelectedClientId(null);
+      refetch();
+    } catch (error) {
+      addToast({
+        type: "error",
+        title: "Move failed",
+        message: "Failed to move client to outreach. Please try again.",
+      });
+      throw error;
+    }
+  };
+
+  // Handle move to referral
+  const handleMoveToReferral = async (clientId: string, reason: string) => {
+    try {
+      await updateClient.mutateAsync({
+        id: clientId,
+        data: {
+          status: "pending_referral",
+          schedulingNotes: reason,
+          referralReason: reason,
+          // Clear scheduling-related fields
+          scheduledAppointment: undefined,
+          schedulingProgress: undefined,
+        },
+      });
+      addToast({
+        type: "success",
+        title: "Moved to Referral",
+        message: "Client has been moved to the referral workflow.",
+      });
+      setSelectedClientId(null);
+      refetch();
+    } catch (error) {
+      addToast({
+        type: "error",
+        title: "Move failed",
+        message: "Failed to move client to referral. Please try again.",
+      });
+      throw error;
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -272,6 +333,8 @@ export default function SchedulingPage() {
               onProgressUpdate={handleProgressUpdate}
               onFinalize={handleFinalizeClick}
               onOpenCommunicationsModal={() => setCommunicationsModalClientId(selectedClient.id)}
+              onMoveToOutreach={handleMoveToOutreach}
+              onMoveToReferral={handleMoveToReferral}
             />
           ) : (
             <div className="flex items-center justify-center h-full">

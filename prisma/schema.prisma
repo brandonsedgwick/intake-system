@@ -297,6 +297,7 @@ model Client {
   scheduledDate     String?
   simplePracticeId  String?
   paperworkComplete Boolean @default(false)
+  schedulingNotes   String? // Notes about scheduling changes (e.g., reason for moving to outreach/referral)
 
   // Referral
   referralEmailSentAt  String?
