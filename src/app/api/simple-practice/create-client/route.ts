@@ -443,8 +443,21 @@ export async function POST(req: NextRequest) {
 
           if (phoneInputs.length > 0) {
             const lastPhoneInput = phoneInputs[phoneInputs.length - 1];
-            await lastPhoneInput.fill(clientData.phone);
-            console.log('[Puppeteer] Filled phone in last phone input');
+
+            // Clear the field first
+            await lastPhoneInput.clear();
+
+            // Click to focus
+            await lastPhoneInput.click();
+            await page.waitForTimeout(200);
+
+            // Type character by character to work with auto-formatting
+            await lastPhoneInput.type(clientData.phone, { delay: 50 });
+            console.log('[Puppeteer] Typed phone number character by character');
+
+            // Verify the value
+            const phoneValue = await lastPhoneInput.inputValue();
+            console.log(`[Puppeteer] Phone field value after typing: "${phoneValue}"`);
           } else {
             console.log('[Puppeteer] No phone inputs found!');
           }
