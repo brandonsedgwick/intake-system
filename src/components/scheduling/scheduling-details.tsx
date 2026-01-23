@@ -23,6 +23,8 @@ import {
   X,
   Loader2,
 } from "lucide-react";
+import CreateClientModal from "./create-client-modal";
+import SimplePracticeIdModal from "./simple-practice-id-modal";
 
 // Type for the boolean progress steps (not the timestamp fields)
 type SchedulingProgressStep = "clientCreated" | "screenerUploaded" | "appointmentCreated" | "finalized";
@@ -36,7 +38,9 @@ interface SchedulingDetailsProps {
     clientId: string,
     step: SchedulingProgressStep,
     value: boolean
-  ) => void;
+  ) => Promise<void>;
+  onSimplePracticeIdSaved: (clientId: string, simplePracticeId: string) => Promise<void>;
+  onSchedulingNotesUpdate: (clientId: string, notes: string) => Promise<void>;
   onFinalize: (clientId: string) => void;
   onOpenCommunicationsModal?: () => void;
   onOfferNewAvailability?: () => void; // TODO: Implement Offer New Availability feature
@@ -113,6 +117,8 @@ function parseOfferedSlots(client: Client): OfferedSlot[] {
 export function SchedulingDetails({
   client,
   onProgressUpdate,
+  onSimplePracticeIdSaved,
+  onSchedulingNotesUpdate,
   onFinalize,
   onOpenCommunicationsModal,
   onOfferNewAvailability,
@@ -123,6 +129,15 @@ export function SchedulingDetails({
   const progress = parseSchedulingProgress(client);
   const initials = getInitials(client.firstName, client.lastName);
   const offeredSlots = parseOfferedSlots(client);
+
+  // Create client modal state
+  const [createClientModalOpen, setCreateClientModalOpen] = useState(false);
+  const [simplePracticeIdModalOpen, setSimplePracticeIdModalOpen] = useState(false);
+
+  // Undo client creation modal state
+  const [undoClientModalOpen, setUndoClientModalOpen] = useState(false);
+  const [undoReason, setUndoReason] = useState("");
+  const [isUndoing, setIsUndoing] = useState(false);
 
   // Move action modal state
   const [moveModalOpen, setMoveModalOpen] = useState(false);
@@ -158,6 +173,50 @@ export function SchedulingDetails({
       closeMoveModal();
     } finally {
       setIsMoving(false);
+    }
+  };
+
+  // Handle create client success
+  const handleCreateClientSuccess = async (simplePracticeId: string, method: 'puppeteer' | 'extension') => {
+    if (method === 'puppeteer') {
+      // Puppeteer auto-captured the ID
+      await onSimplePracticeIdSaved(client.id, simplePracticeId);
+      await onProgressUpdate(client.id, 'clientCreated', true);
+    } else {
+      // Extension method - open manual ID modal
+      setSimplePracticeIdModalOpen(true);
+    }
+  };
+
+  // Handle manual Simple Practice ID submission
+  const handleSimplePracticeIdSubmit = async (simplePracticeId: string) => {
+    await onSimplePracticeIdSaved(client.id, simplePracticeId);
+    await onProgressUpdate(client.id, 'clientCreated', true);
+  };
+
+  // Handle undo client creation
+  const handleUndoClientCreation = async () => {
+    if (!undoReason.trim()) return;
+
+    setIsUndoing(true);
+    try {
+      // Store the undo reason in scheduling notes first
+      const currentNotes = client.schedulingNotes || '';
+      const timestamp = new Date().toLocaleString();
+      const newNote = `[${timestamp}] Undid client creation: ${undoReason.trim()}`;
+      const updatedNotes = currentNotes ? `${currentNotes}\n${newNote}` : newNote;
+      await onSchedulingNotesUpdate(client.id, updatedNotes);
+
+      // Clear Simple Practice ID
+      await onSimplePracticeIdSaved(client.id, '');
+
+      // Mark step as incomplete - this should trigger UI update
+      await onProgressUpdate(client.id, 'clientCreated', false);
+
+      setUndoClientModalOpen(false);
+      setUndoReason('');
+    } finally {
+      setIsUndoing(false);
     }
   };
 
@@ -385,14 +444,35 @@ export function SchedulingDetails({
                     <span className="text-xs">{index + 1}</span>
                   )}
                 </div>
-                <span
-                  className={cn(
-                    "text-sm",
-                    step.completed ? "text-gray-900" : "text-gray-600"
+                <div className="flex-1 flex items-center justify-between">
+                  <span
+                    className={cn(
+                      "text-sm",
+                      step.completed ? "text-gray-900" : "text-gray-600"
+                    )}
+                  >
+                    {step.label}
+                  </span>
+                  {step.key === 'clientCreated' && (
+                    <>
+                      {!step.completed ? (
+                        <button
+                          onClick={() => setCreateClientModalOpen(true)}
+                          className="text-xs text-purple-600 hover:text-purple-700 font-medium"
+                        >
+                          Start
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setUndoClientModalOpen(true)}
+                          className="text-xs text-red-600 hover:text-red-700 font-medium"
+                        >
+                          Undo
+                        </button>
+                      )}
+                    </>
                   )}
-                >
-                  {step.label}
-                </span>
+                </div>
               </div>
             ))}
           </div>
@@ -590,6 +670,109 @@ export function SchedulingDetails({
                       ? "Move to Outreach"
                       : "Move to Referral"}
                   </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Client Modal */}
+      <CreateClientModal
+        client={client}
+        isOpen={createClientModalOpen}
+        onClose={() => setCreateClientModalOpen(false)}
+        onSuccess={handleCreateClientSuccess}
+      />
+
+      {/* Simple Practice ID Modal */}
+      <SimplePracticeIdModal
+        isOpen={simplePracticeIdModalOpen}
+        onClose={() => setSimplePracticeIdModalOpen(false)}
+        onSubmit={handleSimplePracticeIdSubmit}
+        clientName={`${client.firstName} ${client.lastName}`}
+      />
+
+      {/* Undo Client Creation Modal */}
+      {undoClientModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b">
+              <h2 className="text-xl font-bold text-gray-900">
+                Undo Client Creation
+              </h2>
+              <button
+                onClick={() => {
+                  setUndoClientModalOpen(false);
+                  setUndoReason('');
+                }}
+                className="text-gray-400 hover:text-gray-600"
+                disabled={isUndoing}
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6">
+              <p className="text-gray-700 mb-4">
+                This will clear the Simple Practice Client ID and mark this step as incomplete.
+              </p>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Reason for undoing <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={undoReason}
+                  onChange={(e) => setUndoReason(e.target.value)}
+                  placeholder="e.g., Wrong client created, need to recreate with correct information"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
+                  rows={3}
+                  autoFocus
+                />
+                <p className="mt-2 text-xs text-gray-500">
+                  This reason will be saved to the client's scheduling notes.
+                </p>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <p className="text-sm text-amber-800">
+                  <strong>Note:</strong> You'll need to create the client in Simple Practice again and re-enter the ID.
+                </p>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-3 p-6 border-t bg-gray-50">
+              <button
+                onClick={() => {
+                  setUndoClientModalOpen(false);
+                  setUndoReason('');
+                }}
+                disabled={isUndoing}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUndoClientCreation}
+                disabled={!undoReason.trim() || isUndoing}
+                className={cn(
+                  "px-4 py-2 text-white rounded-lg transition-colors flex items-center gap-2",
+                  !undoReason.trim() || isUndoing
+                    ? "bg-gray-400 cursor-not-allowed"
+                    : "bg-red-600 hover:bg-red-700"
+                )}
+              >
+                {isUndoing ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Undoing...
+                  </>
+                ) : (
+                  'Undo Client Creation'
                 )}
               </button>
             </div>

@@ -99,11 +99,13 @@ export interface Client {
   email: string;
   phone?: string;
   age?: string;
+  dateOfBirth?: string; // ISO date string for Simple Practice integration
 
   // Payment/Insurance
   paymentType?: string; // "Insurance", "Self-Pay", etc.
   insuranceProvider?: string;
   insuranceMemberId?: string;
+  hasInsurance?: boolean; // Computed flag: true if paymentType != "Self-pay"
 
   // Preferences
   preferredTimes?: string[];

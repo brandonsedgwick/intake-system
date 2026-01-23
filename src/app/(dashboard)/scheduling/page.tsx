@@ -7,6 +7,8 @@ import { SchedulingTable } from "@/components/scheduling/scheduling-table";
 import { SchedulingDetails } from "@/components/scheduling/scheduling-details";
 import { SchedulingCommunicationsModal } from "@/components/scheduling/scheduling-communications-modal";
 import { FinalizeModal } from "@/components/scheduling/finalize-modal";
+import CreateClientModal from "@/components/scheduling/create-client-modal";
+import SimplePracticeIdModal from "@/components/scheduling/simple-practice-id-modal";
 import { formatDate, cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
 import {
@@ -31,6 +33,7 @@ export default function SchedulingPage() {
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [communicationsModalClientId, setCommunicationsModalClientId] = useState<string | null>(null);
   const [finalizeModalClientId, setFinalizeModalClientId] = useState<string | null>(null);
+  const [createClientModalClientId, setCreateClientModalClientId] = useState<string | null>(null);
 
   // Filter clients in scheduling workflow
   const schedulingClients = useMemo(() => {
@@ -67,6 +70,12 @@ export default function SchedulingPage() {
     if (!finalizeModalClientId) return null;
     return filteredClients.find((c) => c.id === finalizeModalClientId) || null;
   }, [finalizeModalClientId, filteredClients]);
+
+  // Get client for create client modal
+  const createClientModalClient = useMemo(() => {
+    if (!createClientModalClientId) return null;
+    return filteredClients.find((c) => c.id === createClientModalClientId) || null;
+  }, [createClientModalClientId, filteredClients]);
 
   // Count by status
   const statusCounts = useMemo(() => {
@@ -138,6 +147,11 @@ export default function SchedulingPage() {
     }
   };
 
+  // Handle create client button click - opens create client modal
+  const handleCreateClientClick = (clientId: string) => {
+    setCreateClientModalClientId(clientId);
+  };
+
   // Handle finalize button click - opens finalize modal
   const handleFinalizeClick = (clientId: string) => {
     setFinalizeModalClientId(clientId);
@@ -191,6 +205,73 @@ export default function SchedulingPage() {
         title: "Finalize failed",
         message: "Failed to finalize client. Please try again.",
       });
+    }
+  };
+
+  // Handle Simple Practice ID saved
+  const handleSimplePracticeIdSaved = async (clientId: string, simplePracticeId: string) => {
+    try {
+      await updateClient.mutateAsync({
+        id: clientId,
+        data: {
+          simplePracticeId: simplePracticeId || undefined,
+        },
+      });
+      if (simplePracticeId) {
+        addToast({
+          type: "success",
+          title: "Simple Practice ID saved",
+          message: `Client ID ${simplePracticeId} has been linked.`,
+        });
+      } else {
+        addToast({
+          type: "success",
+          title: "Simple Practice ID cleared",
+          message: "Client creation has been undone.",
+        });
+      }
+      refetch();
+    } catch (error) {
+      addToast({
+        type: "error",
+        title: "Save failed",
+        message: "Failed to update Simple Practice ID. Please try again.",
+      });
+    }
+  };
+
+  // Handle scheduling notes update
+  const handleSchedulingNotesUpdate = async (clientId: string, notes: string) => {
+    try {
+      await updateClient.mutateAsync({
+        id: clientId,
+        data: {
+          schedulingNotes: notes,
+        },
+      });
+      refetch();
+    } catch (error) {
+      addToast({
+        type: "error",
+        title: "Update failed",
+        message: "Failed to update scheduling notes.",
+      });
+    }
+  };
+
+  // Handle create client success - called from CreateClientModal
+  const handleCreateClientSuccess = async (simplePracticeId: string, method: 'puppeteer' | 'extension') => {
+    if (!createClientModalClientId) return;
+
+    if (method === 'puppeteer') {
+      // Puppeteer auto-captured the ID, save it and mark complete
+      await handleSimplePracticeIdSaved(createClientModalClientId, simplePracticeId);
+      await handleProgressUpdate(createClientModalClientId, 'clientCreated', true);
+      setCreateClientModalClientId(null);
+    } else {
+      // Extension method - close create modal and keep client ID in state for manual ID modal
+      setCreateClientModalClientId(null);
+      // The CreateClientModal will show an alert, user will manually enter ID
     }
   };
 
@@ -321,6 +402,7 @@ export default function SchedulingPage() {
               onSelectClient={setSelectedClientId}
               onProgressUpdate={handleProgressUpdate}
               onFinalize={handleFinalizeClick}
+              onCreateClient={handleCreateClientClick}
             />
           )}
         </div>
@@ -331,6 +413,8 @@ export default function SchedulingPage() {
             <SchedulingDetails
               client={selectedClient}
               onProgressUpdate={handleProgressUpdate}
+              onSimplePracticeIdSaved={handleSimplePracticeIdSaved}
+              onSchedulingNotesUpdate={handleSchedulingNotesUpdate}
               onFinalize={handleFinalizeClick}
               onOpenCommunicationsModal={() => setCommunicationsModalClientId(selectedClient.id)}
               onMoveToOutreach={handleMoveToOutreach}
@@ -371,6 +455,16 @@ export default function SchedulingPage() {
             await handleActualFinalize(finalizeModalClient.id);
           }}
           isLoading={updateClient.isPending}
+        />
+      )}
+
+      {/* Create Client Modal */}
+      {createClientModalClient && (
+        <CreateClientModal
+          client={createClientModalClient}
+          isOpen={!!createClientModalClient}
+          onClose={() => setCreateClientModalClientId(null)}
+          onSuccess={handleCreateClientSuccess}
         />
       )}
     </div>

@@ -257,16 +257,18 @@ model Client {
   formTimestamp  String? // Original form submission timestamp
 
   // Personal Info
-  firstName String
-  lastName  String
-  email     String
-  phone     String?
-  age       String?
+  firstName   String
+  lastName    String
+  email       String
+  phone       String?
+  age         String?
+  dateOfBirth String? // ISO date string for Simple Practice integration
 
   // Payment/Insurance
   paymentType       String?
   insuranceProvider String?
   insuranceMemberId String?
+  hasInsurance      Boolean @default(false) // Computed flag: true if paymentType != "Self-pay"
 
   // Preferences
   preferredTimes     String? // JSON array of strings

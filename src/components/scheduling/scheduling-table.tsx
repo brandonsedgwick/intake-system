@@ -18,6 +18,7 @@ interface SchedulingTableProps {
     value: boolean
   ) => void;
   onFinalize: (clientId: string) => void;
+  onCreateClient: (clientId: string) => void;
 }
 
 // Get initials from name
@@ -111,6 +112,7 @@ export function SchedulingTable({
   onSelectClient,
   onProgressUpdate,
   onFinalize,
+  onCreateClient,
 }: SchedulingTableProps) {
   return (
     <div className="flex-1 overflow-auto">
@@ -227,9 +229,7 @@ export function SchedulingTable({
                     isDone={progress.clientCreated}
                     colorClass="bg-blue-100 text-blue-700"
                     hoverClass="hover:bg-blue-200"
-                    onClick={() =>
-                      onProgressUpdate(client.id, "clientCreated", true)
-                    }
+                    onClick={() => onCreateClient(client.id)}
                   />
                 </td>
 
