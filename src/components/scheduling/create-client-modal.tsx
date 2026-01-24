@@ -193,11 +193,26 @@ export default function CreateClientModal({
       if (data.success && data.simplePracticeId) {
         onSuccess(data.simplePracticeId, 'puppeteer');
         onClose();
+
+        // Show success toast with additional message
+        if (data.message) {
+          console.log('[Puppeteer Success]', data.message);
+        }
       } else {
-        setError(data.error || 'Failed to create client in Simple Practice');
+        // Handle errors with more detailed messages
+        const errorMessage = data.error || 'Failed to capture Simple Practice ID';
+        setError(errorMessage);
+
+        // Special handling for browser close (status 499 or disconnected)
+        if (response.status === 499 || data.error?.toLowerCase().includes('browser')) {
+          console.warn('[Puppeteer] Browser was closed before ID capture completed');
+        } else if (response.status === 400) {
+          console.warn('[Puppeteer] ID capture failed:', data.error);
+        }
       }
     } catch (e: any) {
-      setError(e.message);
+      setError(e.message || 'An unexpected error occurred');
+      console.error('[Puppeteer Error]', e);
     } finally {
       setLoading(false);
     }

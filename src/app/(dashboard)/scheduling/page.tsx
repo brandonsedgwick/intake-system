@@ -210,13 +210,18 @@ export default function SchedulingPage() {
 
   // Handle Simple Practice ID saved
   const handleSimplePracticeIdSaved = async (clientId: string, simplePracticeId: string) => {
+    console.log('[SchedulingPage] handleSimplePracticeIdSaved called', { clientId, simplePracticeId });
+
     try {
+      console.log('[SchedulingPage] Calling updateClient mutation...');
       await updateClient.mutateAsync({
         id: clientId,
         data: {
           simplePracticeId: simplePracticeId || undefined,
         },
       });
+      console.log('[SchedulingPage] ✓ updateClient mutation successful');
+
       if (simplePracticeId) {
         addToast({
           type: "success",
@@ -232,11 +237,13 @@ export default function SchedulingPage() {
       }
       refetch();
     } catch (error) {
+      console.error('[SchedulingPage] ✗ Error updating client:', error);
       addToast({
         type: "error",
         title: "Save failed",
         message: "Failed to update Simple Practice ID. Please try again.",
       });
+      throw error; // Re-throw so calling code knows it failed
     }
   };
 

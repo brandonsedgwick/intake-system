@@ -178,10 +178,23 @@ export function SchedulingDetails({
 
   // Handle create client success
   const handleCreateClientSuccess = async (simplePracticeId: string, method: 'puppeteer' | 'extension') => {
+    console.log('[SchedulingDetails] handleCreateClientSuccess called', { simplePracticeId, method, clientId: client.id });
+
     if (method === 'puppeteer') {
       // Puppeteer auto-captured the ID
-      await onSimplePracticeIdSaved(client.id, simplePracticeId);
-      await onProgressUpdate(client.id, 'clientCreated', true);
+      console.log('[SchedulingDetails] Saving Simple Practice ID:', simplePracticeId);
+
+      try {
+        await onSimplePracticeIdSaved(client.id, simplePracticeId);
+        console.log('[SchedulingDetails] ✓ Simple Practice ID saved successfully');
+
+        console.log('[SchedulingDetails] Marking clientCreated step as complete');
+        await onProgressUpdate(client.id, 'clientCreated', true);
+        console.log('[SchedulingDetails] ✓ Progress updated successfully');
+      } catch (error) {
+        console.error('[SchedulingDetails] ✗ Error during save:', error);
+        throw error;
+      }
     } else {
       // Extension method - open manual ID modal
       setSimplePracticeIdModalOpen(true);
@@ -413,6 +426,21 @@ export function SchedulingDetails({
               <div className="flex justify-between">
                 <dt className="text-gray-500">Payment Type</dt>
                 <dd className="text-gray-900">{client.paymentType}</dd>
+              </div>
+            )}
+            {client.simplePracticeId && (
+              <div className="flex flex-col gap-1 pt-2 border-t">
+                <dt className="text-gray-500 text-xs font-medium">Simple Practice ID</dt>
+                <dd className="text-gray-900 font-mono text-xs">{client.simplePracticeId}</dd>
+                <a
+                  href={`https://secure.simplepractice.com/clients/${client.simplePracticeId}/overview`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-purple-600 hover:text-purple-700 font-medium inline-flex items-center gap-1 mt-1"
+                >
+                  View in Simple Practice
+                  <ExternalLink className="w-3 h-3" />
+                </a>
               </div>
             )}
           </dl>

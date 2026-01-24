@@ -494,30 +494,648 @@ export async function POST(req: NextRequest) {
 
       console.log('[Puppeteer] Form filling complete');
 
-      // DON'T submit automatically - let user review and submit manually
-      console.log('[Puppeteer] Waiting for manual form submission...');
-      console.log('[Puppeteer] Please review the form and click the submit button');
+      // Define the injection function that we'll call multiple times
+      const injectPopup = async () => {
+        await page.evaluate((clientInfo) => {
+          // Remove existing panel if present
+          const existing = document.getElementById('puppeteer-info-panel');
+          if (existing) {
+            existing.remove();
+          }
 
-      // Wait for navigation after manual submit
-      await page.waitForURL(/\/clients\/\d+/, { timeout: 120000 }); // 2 minutes for manual review
+          console.log('[Popup] Injecting client info panel...');
+        // Create draggable info panel (left side)
+        const infoPanel = document.createElement('div');
+        infoPanel.id = 'puppeteer-info-panel';
+        infoPanel.style.cssText = `
+          position: fixed;
+          top: 20px;
+          left: 20px;
+          z-index: 999999;
+          background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+          padding: 0;
+          border-radius: 16px;
+          box-shadow: 0 20px 60px rgba(240, 147, 251, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1);
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          max-width: 380px;
+          cursor: move;
+          user-select: none;
+          backdrop-filter: blur(10px);
+        `;
 
-      // Extract client ID from URL
-      const url = page.url();
-      const clientIdMatch = url.match(/\/clients\/(\d+)/);
-      const simplePracticeId = clientIdMatch ? clientIdMatch[1] : null;
+        // Drag functionality
+        let isDragging = false;
+        let currentX;
+        let currentY;
+        let initialX;
+        let initialY;
 
-      console.log('[Puppeteer] Client created with ID:', simplePracticeId);
+        infoPanel.addEventListener('mousedown', (e) => {
+          if (e.target.tagName !== 'BUTTON') {
+            isDragging = true;
+            initialX = e.clientX - infoPanel.offsetLeft;
+            initialY = e.clientY - infoPanel.offsetTop;
+            infoPanel.style.cursor = 'grabbing';
+          }
+        });
 
-      // Keep browser open for 5 seconds so user can see the result
-      await page.waitForTimeout(5000);
+        document.addEventListener('mousemove', (e) => {
+          if (isDragging) {
+            e.preventDefault();
+            currentX = e.clientX - initialX;
+            currentY = e.clientY - initialY;
+            infoPanel.style.left = currentX + 'px';
+            infoPanel.style.top = currentY + 'px';
+          }
+        });
 
-      await browser.close();
+        document.addEventListener('mouseup', () => {
+          isDragging = false;
+          infoPanel.style.cursor = 'move';
+        });
 
-      return NextResponse.json({
-        success: true,
-        simplePracticeId,
-        url
+        // Header with drag hint
+        const header = document.createElement('div');
+        header.style.cssText = `
+          background: rgba(255, 255, 255, 0.15);
+          padding: 16px 20px;
+          border-radius: 16px 16px 0 0;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        `;
+
+        const title = document.createElement('div');
+        title.textContent = '📋 Client Information';
+        title.style.cssText = 'font-size: 18px; font-weight: 700; color: white; display: flex; align-items: center; gap: 8px;';
+        header.appendChild(title);
+
+        const dragHint = document.createElement('div');
+        dragHint.textContent = '⋮⋮';
+        dragHint.style.cssText = 'font-size: 20px; color: rgba(255, 255, 255, 0.6); letter-spacing: 2px;';
+        header.appendChild(dragHint);
+
+        infoPanel.appendChild(header);
+
+        // Content area
+        const content = document.createElement('div');
+        content.style.cssText = 'padding: 20px; background: white; border-radius: 0 0 16px 16px;';
+
+        // Info rows with colorful icons
+        const infoData = [
+          { label: 'Name', value: `${clientInfo.firstName || ''} ${clientInfo.lastName || ''}`, icon: '👤', color: '#667eea' },
+          { label: 'Email', value: clientInfo.email || 'N/A', icon: '✉️', color: '#f093fb' },
+          { label: 'Phone', value: clientInfo.phone || 'N/A', icon: '📱', color: '#4ade80' },
+          { label: 'DOB', value: clientInfo.dateOfBirth || 'N/A', icon: '🎂', color: '#fbbf24' },
+          { label: 'Payment', value: clientInfo.hasInsurance ? 'Insurance' : 'Self-pay', icon: '💳', color: '#06b6d4' },
+          { label: 'Clinician', value: clientInfo.clinicianName || 'N/A', icon: '👨‍⚕️', color: '#8b5cf6' },
+          { label: 'Status', value: 'Active', icon: '✅', color: '#10b981' }
+        ];
+
+        infoData.forEach(item => {
+          const row = document.createElement('div');
+          row.style.cssText = `
+            margin-bottom: 14px;
+            padding: 12px;
+            background: linear-gradient(135deg, ${item.color}15, ${item.color}05);
+            border-radius: 10px;
+            border-left: 3px solid ${item.color};
+            transition: transform 0.2s;
+          `;
+          row.addEventListener('mouseenter', () => {
+            row.style.transform = 'translateX(4px)';
+          });
+          row.addEventListener('mouseleave', () => {
+            row.style.transform = 'translateX(0)';
+          });
+
+          const labelRow = document.createElement('div');
+          labelRow.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-bottom: 6px;';
+
+          const icon = document.createElement('span');
+          icon.textContent = item.icon;
+          icon.style.cssText = 'font-size: 16px;';
+          labelRow.appendChild(icon);
+
+          const label = document.createElement('div');
+          label.textContent = item.label;
+          label.style.cssText = 'font-size: 11px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.8px;';
+          labelRow.appendChild(label);
+
+          row.appendChild(labelRow);
+
+          const value = document.createElement('div');
+          value.textContent = item.value;
+          value.style.cssText = 'font-size: 15px; color: #1f2937; font-weight: 600; padding-left: 22px;';
+          row.appendChild(value);
+
+          content.appendChild(row);
+        });
+
+        infoPanel.appendChild(content);
+
+        // Add multi-state button container at the bottom of the panel
+        const buttonContainer = document.createElement('div');
+        buttonContainer.id = 'puppeteer-button-container';
+        buttonContainer.style.cssText = `
+          padding: 20px;
+          background: white;
+          border-radius: 0 0 16px 16px;
+          padding-top: 0;
+        `;
+        console.log('[Popup] ✓ Button container created with ID:', buttonContainer.id);
+
+        // Track state in window object
+        window['captureAttempts'] = 0;
+        window['capturedSimplePracticeId'] = null;
+
+        // Function to render button states
+        window['renderButtonState'] = function(state) {
+          console.log('[renderButtonState] Called with state:', state);
+          const container = document.getElementById('puppeteer-button-container');
+          console.log('[renderButtonState] Container element:', container);
+
+          // Check if container exists
+          if (!container) {
+            console.error('[renderButtonState] ✗ Button container not found!');
+            return;
+          }
+
+          console.log('[renderButtonState] ✓ Container found, rendering state:', state);
+
+          // Clear container using safe DOM methods
+          while (container.firstChild) {
+            container.removeChild(container.firstChild);
+          }
+
+          if (state === 'initial') {
+            // Instruction text
+            const instructionText = document.createElement('div');
+            instructionText.textContent = '✓ Form filled by automation';
+            instructionText.style.cssText = `
+              text-align: center;
+              font-size: 13px;
+              font-weight: 600;
+              color: #10b981;
+              margin-bottom: 8px;
+              padding: 8px;
+              background: #10b98110;
+              border-radius: 8px;
+            `;
+            container.appendChild(instructionText);
+
+            const subtitle = document.createElement('div');
+            subtitle.textContent = 'Complete the workflow, then capture the ID';
+            subtitle.style.cssText = `
+              text-align: center;
+              font-size: 12px;
+              color: #6b7280;
+              margin-bottom: 12px;
+            `;
+            container.appendChild(subtitle);
+
+            // Green Capture button
+            const captureBtn = document.createElement('button');
+            captureBtn.id = 'puppeteer-capture-btn';
+            captureBtn.textContent = 'Capture Simple Practice ID';
+            captureBtn.style.cssText = `
+              width: 100%;
+              padding: 16px 24px;
+              background: linear-gradient(135deg, #10b981, #059669);
+              color: white;
+              border: none;
+              border-radius: 12px;
+              font-size: 16px;
+              font-weight: 600;
+              cursor: pointer;
+              transition: all 0.3s ease;
+              box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+            `;
+
+            captureBtn.addEventListener('mouseenter', () => {
+              captureBtn.style.transform = 'translateY(-2px)';
+              captureBtn.style.boxShadow = '0 6px 20px rgba(16, 185, 129, 0.4)';
+            });
+
+            captureBtn.addEventListener('mouseleave', () => {
+              captureBtn.style.transform = 'translateY(0)';
+              captureBtn.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.3)';
+            });
+
+            captureBtn.addEventListener('click', () => {
+              const url = window.location.href;
+              const match = url.match(/\/clients\/([a-zA-Z0-9]+)/);
+
+              window['captureAttempts'] = (window['captureAttempts'] || 0) + 1;
+
+              if (match && match[1]) {
+                window['capturedSimplePracticeId'] = match[1];
+                window['renderButtonState']('success');
+              } else {
+                window['renderButtonState']('error');
+              }
+            });
+
+            container.appendChild(captureBtn);
+
+          } else if (state === 'success') {
+            // Success state: Show ID + Close button
+            const successDiv = document.createElement('div');
+
+            // Success header
+            const successHeader = document.createElement('div');
+            successHeader.style.cssText = `
+              display: flex;
+              align-items: center;
+              gap: 12px;
+              margin-bottom: 16px;
+              padding: 16px;
+              background: linear-gradient(135deg, #10b98115, #05966905);
+              border-radius: 10px;
+              border-left: 3px solid #10b981;
+            `;
+
+            const checkIconSpan = document.createElement('span');
+            checkIconSpan.textContent = '✅';
+            checkIconSpan.style.fontSize = '20px';
+            successHeader.appendChild(checkIconSpan);
+
+            const successMsg = document.createElement('span');
+            successMsg.textContent = 'ID Captured Successfully!';
+            successMsg.style.cssText = 'font-weight: 600; color: #10b981;';
+            successHeader.appendChild(successMsg);
+
+            // Display captured ID
+            const idDisplay = document.createElement('div');
+            idDisplay.style.cssText = `
+              padding: 12px;
+              background: #1f2937;
+              border-radius: 8px;
+              margin-bottom: 16px;
+              text-align: center;
+            `;
+
+            const idLabel = document.createElement('div');
+            idLabel.style.cssText = 'font-size: 12px; color: #9ca3af; margin-bottom: 4px;';
+            idLabel.textContent = 'Simple Practice Client ID:';
+
+            const idValue = document.createElement('div');
+            idValue.style.cssText = `
+              font-size: 18px;
+              font-weight: 600;
+              color: #10b981;
+              font-family: 'Monaco', 'Courier New', monospace;
+            `;
+            idValue.textContent = window['capturedSimplePracticeId'];
+
+            idDisplay.appendChild(idLabel);
+            idDisplay.appendChild(idValue);
+
+            // Close button
+            const closeBtn = document.createElement('button');
+            closeBtn.id = 'puppeteer-close-btn';
+            closeBtn.textContent = 'Close & Save ID';
+            closeBtn.style.cssText = `
+              width: 100%;
+              padding: 16px 24px;
+              background: linear-gradient(135deg, #667eea, #764ba2);
+              color: white;
+              border: none;
+              border-radius: 12px;
+              font-size: 16px;
+              font-weight: 600;
+              cursor: pointer;
+              transition: all 0.3s ease;
+              box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+            `;
+
+            closeBtn.addEventListener('mouseenter', () => {
+              closeBtn.style.transform = 'translateY(-2px)';
+              closeBtn.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.4)';
+            });
+
+            closeBtn.addEventListener('mouseleave', () => {
+              closeBtn.style.transform = 'translateY(0)';
+              closeBtn.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.3)';
+            });
+
+            successDiv.appendChild(successHeader);
+            successDiv.appendChild(idDisplay);
+            successDiv.appendChild(closeBtn);
+            container.appendChild(successDiv);
+
+          } else if (state === 'error') {
+            // Error state: Show message + Retry button
+            const errorDiv = document.createElement('div');
+
+            // Error header
+            const errorHeader = document.createElement('div');
+            errorHeader.style.cssText = `
+              display: flex;
+              align-items: center;
+              gap: 12px;
+              margin-bottom: 16px;
+              padding: 16px;
+              background: linear-gradient(135deg, #ef444415, #dc262605);
+              border-radius: 10px;
+              border-left: 3px solid #ef4444;
+            `;
+
+            const errorIconSpan = document.createElement('span');
+            errorIconSpan.textContent = '⚠️';
+            errorIconSpan.style.fontSize = '20px';
+            errorHeader.appendChild(errorIconSpan);
+
+            const errorMsg = document.createElement('span');
+            errorMsg.textContent = 'ID Not Found in Current URL';
+            errorMsg.style.cssText = 'font-weight: 600; color: #ef4444;';
+            errorHeader.appendChild(errorMsg);
+
+            // Instructions
+            const instructions = document.createElement('div');
+            instructions.style.cssText = `
+              padding: 12px;
+              background: rgba(255, 255, 255, 0.05);
+              border-radius: 8px;
+              margin-bottom: 16px;
+              font-size: 14px;
+              color: #6b7280;
+              line-height: 1.6;
+            `;
+            instructions.textContent = 'Please navigate to the client profile page first. The URL should look like: secure.simplepractice.com/clients/[ID]/overview';
+
+            // Retry button
+            const retryBtn = document.createElement('button');
+            retryBtn.textContent = `Retry (Attempt ${window['captureAttempts']})`;
+            retryBtn.style.cssText = `
+              width: 100%;
+              padding: 16px 24px;
+              background: linear-gradient(135deg, #f59e0b, #d97706);
+              color: white;
+              border: none;
+              border-radius: 12px;
+              font-size: 16px;
+              font-weight: 600;
+              cursor: pointer;
+              transition: all 0.3s ease;
+              box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+            `;
+
+            retryBtn.addEventListener('mouseenter', () => {
+              retryBtn.style.transform = 'translateY(-2px)';
+              retryBtn.style.boxShadow = '0 6px 20px rgba(245, 158, 11, 0.4)';
+            });
+
+            retryBtn.addEventListener('mouseleave', () => {
+              retryBtn.style.transform = 'translateY(0)';
+              retryBtn.style.boxShadow = '0 4px 12px rgba(245, 158, 11, 0.3)';
+            });
+
+            retryBtn.addEventListener('click', () => {
+              window['renderButtonState']('initial');
+            });
+
+            errorDiv.appendChild(errorHeader);
+            errorDiv.appendChild(instructions);
+            errorDiv.appendChild(retryBtn);
+
+            // Show manual entry link after 2+ attempts
+            if (window['captureAttempts'] >= 2) {
+              const manualLink = document.createElement('button');
+              manualLink.style.cssText = `
+                width: 100%;
+                padding: 12px;
+                background: transparent;
+                color: #60a5fa;
+                border: 1px solid #60a5fa;
+                border-radius: 8px;
+                font-size: 14px;
+                cursor: pointer;
+                margin-top: 12px;
+                transition: all 0.2s;
+              `;
+              manualLink.textContent = 'Enter ID Manually';
+
+              manualLink.addEventListener('mouseenter', () => {
+                manualLink.style.background = 'rgba(96, 165, 250, 0.1)';
+              });
+
+              manualLink.addEventListener('mouseleave', () => {
+                manualLink.style.background = 'transparent';
+              });
+
+              manualLink.addEventListener('click', () => {
+                window['renderButtonState']('manual');
+              });
+
+              errorDiv.appendChild(manualLink);
+            }
+
+            container.appendChild(errorDiv);
+
+          } else if (state === 'manual') {
+            // Manual entry state: Input field + Submit button
+            const manualDiv = document.createElement('div');
+
+            // Header
+            const manualHeader = document.createElement('div');
+            manualHeader.style.cssText = `
+              font-size: 14px;
+              color: #374151;
+              margin-bottom: 12px;
+              font-weight: 500;
+            `;
+            manualHeader.textContent = 'Enter Simple Practice Client ID:';
+
+            // Input field
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.id = 'manual-id-input';
+            input.placeholder = 'e.g., 43bb7957ac5cafa3';
+            input.style.cssText = `
+              width: 100%;
+              padding: 12px;
+              background: #f9fafb;
+              border: 1px solid #d1d5db;
+              border-radius: 8px;
+              color: #1f2937;
+              font-size: 14px;
+              margin-bottom: 12px;
+              font-family: 'Monaco', 'Courier New', monospace;
+            `;
+
+            input.addEventListener('focus', () => {
+              input.style.borderColor = '#60a5fa';
+              input.style.boxShadow = '0 0 0 3px rgba(96, 165, 250, 0.1)';
+            });
+
+            input.addEventListener('blur', () => {
+              input.style.borderColor = '#d1d5db';
+              input.style.boxShadow = 'none';
+            });
+
+            // Submit button
+            const submitBtn = document.createElement('button');
+            submitBtn.textContent = 'Submit ID';
+            submitBtn.style.cssText = `
+              width: 100%;
+              padding: 16px 24px;
+              background: linear-gradient(135deg, #10b981, #059669);
+              color: white;
+              border: none;
+              border-radius: 12px;
+              font-size: 16px;
+              font-weight: 600;
+              cursor: pointer;
+              transition: all 0.3s ease;
+              box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+            `;
+
+            submitBtn.addEventListener('mouseenter', () => {
+              submitBtn.style.transform = 'translateY(-2px)';
+              submitBtn.style.boxShadow = '0 6px 20px rgba(16, 185, 129, 0.4)';
+            });
+
+            submitBtn.addEventListener('mouseleave', () => {
+              submitBtn.style.transform = 'translateY(0)';
+              submitBtn.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.3)';
+            });
+
+            submitBtn.addEventListener('click', () => {
+              const enteredId = input.value.trim();
+
+              // Validate format (alphanumeric, reasonable length)
+              if (enteredId && /^[a-zA-Z0-9]{8,}$/.test(enteredId)) {
+                window['capturedSimplePracticeId'] = enteredId;
+                window['renderButtonState']('success');
+              } else {
+                // Show validation error
+                input.style.borderColor = '#ef4444';
+                input.style.boxShadow = '0 0 0 3px rgba(239, 68, 68, 0.1)';
+
+                setTimeout(() => {
+                  input.style.borderColor = '#d1d5db';
+                  input.style.boxShadow = 'none';
+                }, 2000);
+              }
+            });
+
+            // Cancel link
+            const cancelLink = document.createElement('button');
+            cancelLink.style.cssText = `
+              width: 100%;
+              padding: 8px;
+              background: transparent;
+              color: #6b7280;
+              border: none;
+              font-size: 13px;
+              cursor: pointer;
+              margin-top: 8px;
+            `;
+            cancelLink.textContent = '← Back to Capture';
+
+            cancelLink.addEventListener('click', () => {
+              window['renderButtonState']('initial');
+            });
+
+            manualDiv.appendChild(manualHeader);
+            manualDiv.appendChild(input);
+            manualDiv.appendChild(submitBtn);
+            manualDiv.appendChild(cancelLink);
+            container.appendChild(manualDiv);
+          }
+        };
+
+        // Append button container to panel FIRST
+        infoPanel.appendChild(buttonContainer);
+        console.log('[Popup] Button container appended to panel');
+
+        // Append panel to body
+        document.body.appendChild(infoPanel);
+        console.log('[Popup] Panel appended to body');
+
+        // Initialize with capture button AFTER everything is in the DOM
+        console.log('[Popup] Calling renderButtonState(initial)...');
+        window['renderButtonState']('initial');
+        console.log('[Popup] ✓ Panel injected successfully');
+        }, clientData);
+      };
+
+      // Inject popup initially
+      await injectPopup();
+
+      console.log('[Puppeteer] ✓ Injected client info panel with capture button');
+
+      // Re-inject popup on every navigation (since it gets removed on page change)
+      page.on('load', async () => {
+        console.log('[Puppeteer] Page loaded, re-injecting popup...');
+        await injectPopup().catch(e => console.log('[Puppeteer] Failed to re-inject:', e.message));
       });
+      console.log('[Puppeteer] ============================================');
+      console.log('[Puppeteer] NEXT STEPS:');
+      console.log('[Puppeteer] 1. Complete the Simple Practice workflow');
+      console.log('[Puppeteer] 2. Click "Capture Simple Practice ID" button');
+      console.log('[Puppeteer] 3. Click "Close & Save ID" when ready');
+      console.log('[Puppeteer] ============================================');
+
+      // Wait for user to click Close button after capturing ID
+      console.log('[Puppeteer] Waiting for user to capture Simple Practice ID...');
+
+      const capturedId = await page.evaluate(() => {
+        return new Promise((resolve) => {
+          // Poll for close button click
+          const checkForClose = setInterval(() => {
+            const closeBtn = document.getElementById('puppeteer-close-btn');
+
+            if (closeBtn) {
+              closeBtn.addEventListener('click', () => {
+                clearInterval(checkForClose);
+
+                // Get captured ID from window object
+                const capturedId = window['capturedSimplePracticeId'];
+                resolve(capturedId);
+              }, { once: true }); // Use once option to avoid multiple listeners
+            }
+          }, 500); // Check every 500ms
+
+          // Timeout after 30 minutes
+          setTimeout(() => {
+            clearInterval(checkForClose);
+            resolve(null);
+          }, 1800000);
+        });
+      });
+
+      if (capturedId) {
+        console.log('[Puppeteer] ✓ SUCCESS! Simple Practice ID captured:', capturedId);
+        console.log('[Puppeteer] Browser will remain open. Please close it manually when ready.');
+
+        // DO NOT close browser - user closes manually
+        // Monitor for browser close (user closes manually)
+        browser.on('disconnected', () => {
+          console.log('[Puppeteer] Browser closed by user');
+        });
+
+        // Wait a bit to allow response to be sent before function ends
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        return NextResponse.json({
+          success: true,
+          simplePracticeId: capturedId,
+          message: 'Client ID captured successfully. Browser remains open - close manually when ready.'
+        });
+      } else {
+        console.log('[Puppeteer] ✗ Timeout or no ID captured');
+        console.log('[Puppeteer] Browser will remain open');
+
+        // Don't close browser - let user see what happened
+        return NextResponse.json({
+          success: false,
+          error: 'No Simple Practice ID was captured. Please try again or enter manually.',
+          message: 'Browser remains open - close manually when ready.'
+        }, { status: 400 });
+      }
 
     } catch (error: any) {
       console.error('[Puppeteer] Error during automation:', error);
