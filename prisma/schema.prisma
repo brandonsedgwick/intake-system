@@ -311,6 +311,12 @@ model Client {
   scheduledAppointment String? // JSON object of ScheduledAppointment (full scheduling details)
   schedulingProgress   String? // JSON object of SchedulingProgress (tracks scheduling workflow steps)
 
+  // PDF Screener Storage (Phase 10)
+  screenerPdfData        String? // Base64-encoded PDF file
+  screenerGeneratedAt    String? // ISO timestamp when PDF was generated
+  screenerUploadedToSP   Boolean @default(false) // Whether PDF was successfully uploaded to Simple Practice
+  screenerUploadError    String? // Error message if upload failed (for manual retry)
+
   // Closure
   closedDate         String?
   closedReason       String?

@@ -138,6 +138,12 @@ export interface Client {
   paperworkComplete?: boolean;
   schedulingNotes?: string; // Notes about scheduling changes (e.g., reason for moving to outreach/referral)
 
+  // PDF Screener Storage (Phase 10)
+  screenerPdfData?: string; // Base64-encoded PDF file
+  screenerGeneratedAt?: string; // ISO timestamp when PDF was generated
+  screenerUploadedToSP?: boolean; // Whether PDF was successfully uploaded to Simple Practice
+  screenerUploadError?: string; // Error message if upload failed
+
   // Referral
   referralEmailSentAt?: string;
   referralClinicNames?: string; // Comma-separated list of clinic names

@@ -230,6 +230,7 @@ function dbClientToClient(c: {
   lastName: string;
   email: string;
   phone: string | null;
+  dateOfBirth: string | null;
   age: string | null;
   paymentType: string | null;
   insuranceProvider: string | null;
@@ -264,6 +265,11 @@ function dbClientToClient(c: {
   acceptedSlot: string | null;
   scheduledAppointment: string | null;
   schedulingProgress: string | null;
+  schedulingNotes: string | null;
+  screenerPdfData: string | null;
+  screenerGeneratedAt: string | null;
+  screenerUploadedToSP: boolean;
+  screenerUploadError: string | null;
 }): Client {
   return {
     id: c.id,
@@ -277,6 +283,7 @@ function dbClientToClient(c: {
     lastName: c.lastName,
     email: c.email,
     phone: c.phone || undefined,
+    dateOfBirth: c.dateOfBirth || undefined,
     age: c.age || undefined,
     paymentType: c.paymentType || undefined,
     insuranceProvider: c.insuranceProvider || undefined,
@@ -311,6 +318,11 @@ function dbClientToClient(c: {
     acceptedSlot: c.acceptedSlot || undefined,
     scheduledAppointment: c.scheduledAppointment || undefined,
     schedulingProgress: c.schedulingProgress || undefined,
+    schedulingNotes: c.schedulingNotes || undefined,
+    screenerPdfData: c.screenerPdfData || undefined,
+    screenerGeneratedAt: c.screenerGeneratedAt || undefined,
+    screenerUploadedToSP: c.screenerUploadedToSP || undefined,
+    screenerUploadError: c.screenerUploadError || undefined,
   };
 }
 

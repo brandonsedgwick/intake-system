@@ -152,6 +152,75 @@ export default function SchedulingPage() {
     setCreateClientModalClientId(clientId);
   };
 
+  // Handle upload screener button click - launches Puppeteer to upload PDF
+  const handleUploadScreener = async (clientId: string) => {
+    const client = filteredClients.find((c) => c.id === clientId);
+
+    if (!client?.simplePracticeId) {
+      addToast({
+        type: "error",
+        title: "Simple Practice ID Required",
+        message: "Please create the client in Simple Practice first to capture their ID.",
+      });
+      return;
+    }
+
+    if (!client?.screenerPdfData) {
+      addToast({
+        type: "error",
+        title: "Screener PDF Required",
+        message: "Please generate the screener PDF first.",
+      });
+      return;
+    }
+
+    addToast({
+      type: "info",
+      title: "Opening Browser",
+      message: "Launching Puppeteer to upload screener...",
+    });
+
+    try {
+      const response = await fetch('/api/simple-practice/upload-screener', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId }),
+      });
+
+      const data = await response.json();
+
+      if (data.success && data.screenerUploaded) {
+        addToast({
+          type: "success",
+          title: "Screener Uploaded",
+          message: "The screener PDF has been uploaded to Simple Practice.",
+        });
+      } else if (data.success && !data.screenerUploaded) {
+        addToast({
+          type: "warning",
+          title: "Upload Incomplete",
+          message: data.error || "The upload was not completed successfully.",
+        });
+      } else {
+        addToast({
+          type: "error",
+          title: "Upload Failed",
+          message: data.error || "Failed to upload screener.",
+        });
+      }
+
+      // Refresh client data to show updated status
+      refetch();
+    } catch (error: any) {
+      console.error('[SchedulingPage] Upload screener error:', error);
+      addToast({
+        type: "error",
+        title: "Upload Error",
+        message: error.message || "An error occurred while uploading.",
+      });
+    }
+  };
+
   // Handle finalize button click - opens finalize modal
   const handleFinalizeClick = (clientId: string) => {
     setFinalizeModalClientId(clientId);
@@ -217,7 +286,7 @@ export default function SchedulingPage() {
       await updateClient.mutateAsync({
         id: clientId,
         data: {
-          simplePracticeId: simplePracticeId || undefined,
+          simplePracticeId: simplePracticeId || null,
         },
       });
       console.log('[SchedulingPage] ✓ updateClient mutation successful');
@@ -410,6 +479,7 @@ export default function SchedulingPage() {
               onProgressUpdate={handleProgressUpdate}
               onFinalize={handleFinalizeClick}
               onCreateClient={handleCreateClientClick}
+              onUploadScreener={handleUploadScreener}
             />
           )}
         </div>

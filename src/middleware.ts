@@ -1,5 +1,15 @@
 import { withAuth } from "next-auth/middleware";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+
+// Paths that should be excluded from auth (called from Puppeteer popup in Simple Practice domain)
+const publicApiPaths = [
+  /^\/api\/clients\/[^/]+\/simple-practice-id$/,
+  /^\/api\/clients\/[^/]+\/upload-screener$/,
+];
+
+function isPublicApiPath(pathname: string): boolean {
+  return publicApiPaths.some(pattern => pattern.test(pathname));
+}
 
 export default withAuth(
   function middleware(req) {
@@ -8,7 +18,13 @@ export default withAuth(
   },
   {
     callbacks: {
-      authorized: ({ token }) => !!token,
+      authorized: ({ token, req }) => {
+        // Allow public API paths without auth
+        if (isPublicApiPath(req.nextUrl.pathname)) {
+          return true;
+        }
+        return !!token;
+      },
     },
   }
 );

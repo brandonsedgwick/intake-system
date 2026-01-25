@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { chromium } from 'playwright';
+import { prisma } from '@/lib/db/prisma';
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,7 +13,49 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Get app origin for API calls from popup
+    const appOrigin = process.env.NEXTAUTH_URL || 'http://localhost:3001';
+
+    // Add appOrigin to clientData for popup to use
+    const clientDataWithOrigin = {
+      ...clientData,
+      appOrigin,
+    };
+
     console.log('[Puppeteer] Starting Simple Practice automation...');
+    console.log('[Puppeteer] App origin for API calls:', appOrigin);
+
+    // Pre-generate the screener PDF so it's ready for upload later
+    // This ensures the PDF exists before the user gets to the upload step
+    if (clientData.clientId) {
+      console.log('[Puppeteer] Pre-generating screener PDF...');
+      try {
+        const { generateScreenerPDF, saveScreenerPDF } = await import('@/lib/services/pdf-screener');
+        const { pdfBase64, generatedAt } = await generateScreenerPDF({
+          id: clientData.clientId,
+          firstName: clientData.firstName || '',
+          lastName: clientData.lastName || '',
+          email: clientData.email || '',
+          phone: clientData.phone || null,
+          dateOfBirth: clientData.dateOfBirth || null,
+          age: clientData.age || null,
+          paymentType: clientData.paymentType || null,
+          insuranceProvider: clientData.insuranceProvider || null,
+          insuranceMemberId: clientData.insuranceMemberId || null,
+          presentingConcerns: clientData.presentingConcerns || null,
+          suicideAttemptRecent: clientData.suicideAttemptRecent || null,
+          psychiatricHospitalization: clientData.psychiatricHospitalization || null,
+          additionalInfo: clientData.additionalInfo || null,
+        });
+        await saveScreenerPDF(clientData.clientId, pdfBase64, generatedAt);
+        console.log('[Puppeteer] ✓ Screener PDF pre-generated and saved to database');
+      } catch (pdfError: any) {
+        console.error('[Puppeteer] ⚠ PDF generation failed (will continue without PDF):', pdfError.message);
+        // Continue anyway - upload button will show appropriate error if PDF is missing
+      }
+    } else {
+      console.warn('[Puppeteer] ⚠ No clientId provided, skipping PDF pre-generation');
+    }
 
     // Launch browser (visible for now per user request)
     const browser = await chromium.launch({
@@ -723,16 +766,79 @@ export async function POST(req: NextRequest) {
               captureBtn.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.3)';
             });
 
-            captureBtn.addEventListener('click', () => {
+            captureBtn.addEventListener('click', async () => {
               const url = window.location.href;
+              console.log('[Popup] Current URL:', url);
+              console.log('[Popup] Looking for client ID pattern /clients/[id]');
+
               const match = url.match(/\/clients\/([a-zA-Z0-9]+)/);
 
               window['captureAttempts'] = (window['captureAttempts'] || 0) + 1;
+              console.log('[Popup] Capture attempt #', window['captureAttempts']);
 
               if (match && match[1]) {
-                window['capturedSimplePracticeId'] = match[1];
-                window['renderButtonState']('success');
+                const capturedId = match[1];
+                console.log('[Popup] ✓ Found Simple Practice ID in URL:', capturedId);
+                window['capturedSimplePracticeId'] = capturedId;
+
+                // Show saving state
+                captureBtn.textContent = 'Saving...';
+                captureBtn.disabled = true;
+                captureBtn.style.opacity = '0.7';
+
+                // Call API to save the ID
+                const apiUrl = clientInfo.appOrigin + '/api/clients/' + clientInfo.clientId + '/simple-practice-id';
+                console.log('[Popup] Calling API to save ID...');
+                console.log('[Popup] API URL:', apiUrl);
+                console.log('[Popup] Client ID (internal):', clientInfo.clientId);
+                console.log('[Popup] Simple Practice ID:', capturedId);
+
+                try {
+                  const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ simplePracticeId: capturedId })
+                  });
+
+                  console.log('[Popup] Response status:', response.status);
+                  console.log('[Popup] Response OK:', response.ok);
+
+                  let data;
+                  try {
+                    data = await response.json();
+                    console.log('[Popup] Response data:', JSON.stringify(data));
+                  } catch (jsonErr) {
+                    console.error('[Popup] Failed to parse JSON response:', jsonErr);
+                    window['apiError'] = 'Invalid response from server (status ' + response.status + ')';
+                    window['renderButtonState']('api_error');
+                    return;
+                  }
+
+                  if (response.ok && data.success) {
+                    console.log('[Popup] ✓ ID saved successfully!');
+                    window['idSavedToDb'] = true;
+                    window['renderButtonState']('success');
+                  } else {
+                    console.error('[Popup] ✗ API returned error:', data.error);
+                    window['apiError'] = data.error || 'Failed to save ID (status ' + response.status + ')';
+                    window['renderButtonState']('api_error');
+                  }
+                } catch (err) {
+                  console.error('[Popup] ✗ Network/fetch error:', err);
+                  console.error('[Popup] Error name:', err.name);
+                  console.error('[Popup] Error message:', err.message);
+
+                  // Provide more helpful error messages
+                  let errorMsg = 'Network error: ' + (err.message || 'Unknown error');
+                  if (err.message && err.message.includes('Failed to fetch')) {
+                    errorMsg = 'Cannot reach server. This may be a CORS or mixed-content issue. Check that ' + clientInfo.appOrigin + ' is accessible.';
+                  }
+
+                  window['apiError'] = errorMsg;
+                  window['renderButtonState']('api_error');
+                }
               } else {
+                console.log('[Popup] ✗ No client ID found in URL. URL does not match pattern /clients/[id]');
                 window['renderButtonState']('error');
               }
             });
@@ -740,7 +846,7 @@ export async function POST(req: NextRequest) {
             container.appendChild(captureBtn);
 
           } else if (state === 'success') {
-            // Success state: Show ID + Close button
+            // Success state: Show ID + Upload button + Close button
             const successDiv = document.createElement('div');
 
             // Success header
@@ -761,10 +867,16 @@ export async function POST(req: NextRequest) {
             checkIconSpan.style.fontSize = '20px';
             successHeader.appendChild(checkIconSpan);
 
-            const successMsg = document.createElement('span');
-            successMsg.textContent = 'ID Captured Successfully!';
+            const successMsgDiv = document.createElement('div');
+            const successMsg = document.createElement('div');
+            successMsg.textContent = 'ID Captured & Saved!';
             successMsg.style.cssText = 'font-weight: 600; color: #10b981;';
-            successHeader.appendChild(successMsg);
+            const savedNote = document.createElement('div');
+            savedNote.textContent = 'Saved to database';
+            savedNote.style.cssText = 'font-size: 11px; color: #6b7280; margin-top: 2px;';
+            successMsgDiv.appendChild(successMsg);
+            successMsgDiv.appendChild(savedNote);
+            successHeader.appendChild(successMsgDiv);
 
             // Display captured ID
             const idDisplay = document.createElement('div');
@@ -792,14 +904,14 @@ export async function POST(req: NextRequest) {
             idDisplay.appendChild(idLabel);
             idDisplay.appendChild(idValue);
 
-            // Close button
-            const closeBtn = document.createElement('button');
-            closeBtn.id = 'puppeteer-close-btn';
-            closeBtn.textContent = 'Close & Save ID';
-            closeBtn.style.cssText = `
+            // Upload Screener button (purple)
+            const uploadBtn = document.createElement('button');
+            uploadBtn.id = 'puppeteer-upload-btn';
+            uploadBtn.textContent = 'Upload Screener PDF';
+            uploadBtn.style.cssText = `
               width: 100%;
               padding: 16px 24px;
-              background: linear-gradient(135deg, #667eea, #764ba2);
+              background: linear-gradient(135deg, #8b5cf6, #7c3aed);
               color: white;
               border: none;
               border-radius: 12px;
@@ -807,23 +919,168 @@ export async function POST(req: NextRequest) {
               font-weight: 600;
               cursor: pointer;
               transition: all 0.3s ease;
-              box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+              box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+              margin-bottom: 12px;
+            `;
+
+            uploadBtn.addEventListener('mouseenter', () => {
+              uploadBtn.style.transform = 'translateY(-2px)';
+              uploadBtn.style.boxShadow = '0 6px 20px rgba(139, 92, 246, 0.4)';
+            });
+
+            uploadBtn.addEventListener('mouseleave', () => {
+              uploadBtn.style.transform = 'translateY(0)';
+              uploadBtn.style.boxShadow = '0 4px 12px rgba(139, 92, 246, 0.3)';
+            });
+
+            uploadBtn.addEventListener('click', () => {
+              // Signal to server that upload is requested
+              window['uploadRequested'] = true;
+              uploadBtn.textContent = 'Uploading...';
+              uploadBtn.disabled = true;
+              uploadBtn.style.opacity = '0.7';
+            });
+
+            // Close Browser button (gray outline)
+            const closeBtn = document.createElement('button');
+            closeBtn.id = 'puppeteer-close-btn';
+            closeBtn.textContent = 'Close Browser';
+            closeBtn.style.cssText = `
+              width: 100%;
+              padding: 14px 24px;
+              background: transparent;
+              color: #6b7280;
+              border: 2px solid #d1d5db;
+              border-radius: 12px;
+              font-size: 15px;
+              font-weight: 600;
+              cursor: pointer;
+              transition: all 0.3s ease;
             `;
 
             closeBtn.addEventListener('mouseenter', () => {
-              closeBtn.style.transform = 'translateY(-2px)';
-              closeBtn.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.4)';
+              closeBtn.style.borderColor = '#9ca3af';
+              closeBtn.style.color = '#4b5563';
             });
 
             closeBtn.addEventListener('mouseleave', () => {
-              closeBtn.style.transform = 'translateY(0)';
-              closeBtn.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.3)';
+              closeBtn.style.borderColor = '#d1d5db';
+              closeBtn.style.color = '#6b7280';
+            });
+
+            closeBtn.addEventListener('click', () => {
+              window['closeRequested'] = true;
             });
 
             successDiv.appendChild(successHeader);
             successDiv.appendChild(idDisplay);
+            successDiv.appendChild(uploadBtn);
             successDiv.appendChild(closeBtn);
             container.appendChild(successDiv);
+
+          } else if (state === 'api_error') {
+            // API error state: Show error + debug info + retry option
+            const apiErrorDiv = document.createElement('div');
+
+            const errorHeader = document.createElement('div');
+            errorHeader.style.cssText = `
+              display: flex;
+              align-items: center;
+              gap: 12px;
+              margin-bottom: 16px;
+              padding: 16px;
+              background: linear-gradient(135deg, #ef444415, #dc262605);
+              border-radius: 10px;
+              border-left: 3px solid #ef4444;
+            `;
+
+            const errorIcon = document.createElement('span');
+            errorIcon.textContent = '❌';
+            errorIcon.style.fontSize = '20px';
+            errorHeader.appendChild(errorIcon);
+
+            const errorMsgDiv = document.createElement('div');
+            const errorTitle = document.createElement('div');
+            errorTitle.textContent = 'Failed to Save ID';
+            errorTitle.style.cssText = 'font-weight: 600; color: #ef4444;';
+            const errorDetail = document.createElement('div');
+            errorDetail.textContent = window['apiError'] || 'Unknown error';
+            errorDetail.style.cssText = 'font-size: 12px; color: #6b7280; margin-top: 2px; word-break: break-word;';
+            errorMsgDiv.appendChild(errorTitle);
+            errorMsgDiv.appendChild(errorDetail);
+            errorHeader.appendChild(errorMsgDiv);
+
+            // Debug info section (collapsible)
+            const debugSection = document.createElement('div');
+            debugSection.style.cssText = `
+              margin-bottom: 12px;
+              padding: 12px;
+              background: #f3f4f6;
+              border-radius: 8px;
+              font-size: 11px;
+              font-family: 'Monaco', 'Courier New', monospace;
+            `;
+
+            const debugLabel = document.createElement('div');
+            debugLabel.textContent = 'Debug Info:';
+            debugLabel.style.cssText = 'font-weight: 600; margin-bottom: 8px; color: #374151;';
+            debugSection.appendChild(debugLabel);
+
+            const debugApiUrl = document.createElement('div');
+            debugApiUrl.textContent = 'API: ' + clientInfo.appOrigin + '/api/clients/' + clientInfo.clientId + '/simple-practice-id';
+            debugApiUrl.style.cssText = 'word-break: break-all; color: #6b7280; margin-bottom: 4px;';
+            debugSection.appendChild(debugApiUrl);
+
+            const debugTip = document.createElement('div');
+            debugTip.textContent = 'Tip: Check browser console (F12) for detailed logs';
+            debugTip.style.cssText = 'color: #9ca3af; font-style: italic;';
+            debugSection.appendChild(debugTip);
+
+            // Retry button
+            const retryBtn = document.createElement('button');
+            retryBtn.textContent = 'Retry';
+            retryBtn.style.cssText = `
+              width: 100%;
+              padding: 14px 24px;
+              background: linear-gradient(135deg, #f59e0b, #d97706);
+              color: white;
+              border: none;
+              border-radius: 12px;
+              font-size: 15px;
+              font-weight: 600;
+              cursor: pointer;
+              margin-bottom: 12px;
+            `;
+
+            retryBtn.addEventListener('click', () => {
+              window['renderButtonState']('initial');
+            });
+
+            // Close button
+            const closeBtn = document.createElement('button');
+            closeBtn.id = 'puppeteer-close-btn';
+            closeBtn.textContent = 'Close Browser';
+            closeBtn.style.cssText = `
+              width: 100%;
+              padding: 14px 24px;
+              background: transparent;
+              color: #6b7280;
+              border: 2px solid #d1d5db;
+              border-radius: 12px;
+              font-size: 15px;
+              font-weight: 600;
+              cursor: pointer;
+            `;
+
+            closeBtn.addEventListener('click', () => {
+              window['closeRequested'] = true;
+            });
+
+            apiErrorDiv.appendChild(errorHeader);
+            apiErrorDiv.appendChild(debugSection);
+            apiErrorDiv.appendChild(retryBtn);
+            apiErrorDiv.appendChild(closeBtn);
+            container.appendChild(apiErrorDiv);
 
           } else if (state === 'error') {
             // Error state: Show message + Retry button
@@ -1044,6 +1301,158 @@ export async function POST(req: NextRequest) {
             manualDiv.appendChild(submitBtn);
             manualDiv.appendChild(cancelLink);
             container.appendChild(manualDiv);
+
+          } else if (state === 'uploading') {
+            // Uploading state: Show spinner
+            const uploadingDiv = document.createElement('div');
+            uploadingDiv.style.cssText = 'text-align: center; padding: 20px;';
+
+            const spinner = document.createElement('div');
+            spinner.style.cssText = `
+              width: 40px;
+              height: 40px;
+              border: 4px solid #e5e7eb;
+              border-top: 4px solid #8b5cf6;
+              border-radius: 50%;
+              margin: 0 auto 16px;
+              animation: spin 1s linear infinite;
+            `;
+
+            // Add keyframes for spinner
+            const styleEl = document.createElement('style');
+            styleEl.textContent = '@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }';
+            document.head.appendChild(styleEl);
+
+            const uploadingText = document.createElement('div');
+            uploadingText.textContent = 'Uploading screener PDF...';
+            uploadingText.style.cssText = 'font-weight: 600; color: #6b7280;';
+
+            const subText = document.createElement('div');
+            subText.textContent = 'Please wait...';
+            subText.style.cssText = 'font-size: 12px; color: #9ca3af; margin-top: 4px;';
+
+            uploadingDiv.appendChild(spinner);
+            uploadingDiv.appendChild(uploadingText);
+            uploadingDiv.appendChild(subText);
+            container.appendChild(uploadingDiv);
+
+          } else if (state === 'complete') {
+            // Complete state: All done, show success and close button
+            const completeDiv = document.createElement('div');
+
+            // Success header
+            const successHeader = document.createElement('div');
+            successHeader.style.cssText = `
+              padding: 16px;
+              background: linear-gradient(135deg, #10b98115, #05966905);
+              border-radius: 10px;
+              border-left: 3px solid #10b981;
+              margin-bottom: 16px;
+            `;
+
+            const row1 = document.createElement('div');
+            row1.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 8px;';
+            row1.innerHTML = '<span style="font-size: 16px;">✅</span><span style="font-weight: 600; color: #10b981;">ID Captured & Saved</span>';
+
+            const row2 = document.createElement('div');
+            row2.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+            row2.innerHTML = '<span style="font-size: 16px;">✅</span><span style="font-weight: 600; color: #10b981;">Screener Uploaded</span>';
+
+            successHeader.appendChild(row1);
+            successHeader.appendChild(row2);
+
+            // All done message
+            const doneMsg = document.createElement('div');
+            doneMsg.textContent = 'All tasks completed successfully!';
+            doneMsg.style.cssText = 'text-align: center; font-size: 14px; color: #6b7280; margin-bottom: 16px;';
+
+            // Close button (prominent green)
+            const closeBtn = document.createElement('button');
+            closeBtn.id = 'puppeteer-close-btn';
+            closeBtn.textContent = 'Close Browser';
+            closeBtn.style.cssText = `
+              width: 100%;
+              padding: 16px 24px;
+              background: linear-gradient(135deg, #10b981, #059669);
+              color: white;
+              border: none;
+              border-radius: 12px;
+              font-size: 16px;
+              font-weight: 600;
+              cursor: pointer;
+              box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+            `;
+
+            closeBtn.addEventListener('click', () => {
+              window['closeRequested'] = true;
+            });
+
+            completeDiv.appendChild(successHeader);
+            completeDiv.appendChild(doneMsg);
+            completeDiv.appendChild(closeBtn);
+            container.appendChild(completeDiv);
+
+          } else if (state === 'upload_error') {
+            // Upload error state
+            const errorDiv = document.createElement('div');
+
+            const errorHeader = document.createElement('div');
+            errorHeader.style.cssText = `
+              display: flex;
+              align-items: center;
+              gap: 12px;
+              margin-bottom: 16px;
+              padding: 16px;
+              background: linear-gradient(135deg, #f59e0b15, #d9770605);
+              border-radius: 10px;
+              border-left: 3px solid #f59e0b;
+            `;
+
+            const warningIcon = document.createElement('span');
+            warningIcon.textContent = '⚠️';
+            warningIcon.style.fontSize = '20px';
+            errorHeader.appendChild(warningIcon);
+
+            const errorMsgDiv = document.createElement('div');
+            const errorTitle = document.createElement('div');
+            errorTitle.textContent = 'Upload Failed';
+            errorTitle.style.cssText = 'font-weight: 600; color: #f59e0b;';
+            const errorDetail = document.createElement('div');
+            errorDetail.textContent = window['uploadError'] || 'Could not upload PDF';
+            errorDetail.style.cssText = 'font-size: 12px; color: #6b7280; margin-top: 2px;';
+            errorMsgDiv.appendChild(errorTitle);
+            errorMsgDiv.appendChild(errorDetail);
+            errorHeader.appendChild(errorMsgDiv);
+
+            // Note about manual upload
+            const noteText = document.createElement('div');
+            noteText.textContent = 'ID was saved. You can upload the PDF manually from the scheduling page.';
+            noteText.style.cssText = 'font-size: 13px; color: #6b7280; margin-bottom: 16px; line-height: 1.5;';
+
+            // Close button
+            const closeBtn = document.createElement('button');
+            closeBtn.id = 'puppeteer-close-btn';
+            closeBtn.textContent = 'Close Browser';
+            closeBtn.style.cssText = `
+              width: 100%;
+              padding: 14px 24px;
+              background: linear-gradient(135deg, #667eea, #764ba2);
+              color: white;
+              border: none;
+              border-radius: 12px;
+              font-size: 15px;
+              font-weight: 600;
+              cursor: pointer;
+            `;
+
+            closeBtn.addEventListener('click', () => {
+              window['closeRequested'] = true;
+            });
+
+            errorDiv.appendChild(errorHeader);
+            errorDiv.appendChild(noteText);
+            errorDiv.appendChild(closeBtn);
+            container.appendChild(errorDiv);
           }
         };
 
@@ -1059,7 +1468,7 @@ export async function POST(req: NextRequest) {
         console.log('[Popup] Calling renderButtonState(initial)...');
         window['renderButtonState']('initial');
         console.log('[Popup] ✓ Panel injected successfully');
-        }, clientData);
+        }, clientDataWithOrigin);
       };
 
       // Inject popup initially
@@ -1068,73 +1477,224 @@ export async function POST(req: NextRequest) {
       console.log('[Puppeteer] ✓ Injected client info panel with capture button');
 
       // Re-inject popup on every navigation (since it gets removed on page change)
+      // Listen for both 'load' and 'domcontentloaded' events
       page.on('load', async () => {
-        console.log('[Puppeteer] Page loaded, re-injecting popup...');
-        await injectPopup().catch(e => console.log('[Puppeteer] Failed to re-inject:', e.message));
+        console.log('[Puppeteer] Page load event, re-injecting popup...');
+        await injectPopup().catch(e => console.log('[Puppeteer] Failed to re-inject on load:', e.message));
       });
+
+      page.on('domcontentloaded', async () => {
+        console.log('[Puppeteer] DOM content loaded, re-injecting popup...');
+        await injectPopup().catch(e => console.log('[Puppeteer] Failed to re-inject on DOMContentLoaded:', e.message));
+      });
+
+      // Also poll for URL changes (SP might use client-side routing that doesn't trigger page events)
+      let lastKnownUrl = page.url();
+      const urlPollInterval = setInterval(async () => {
+        try {
+          if (!browser.isConnected()) {
+            clearInterval(urlPollInterval);
+            return;
+          }
+          const currentUrl = page.url();
+          if (currentUrl !== lastKnownUrl) {
+            console.log('[Puppeteer] URL changed (client-side routing detected):', currentUrl);
+            lastKnownUrl = currentUrl;
+            await injectPopup().catch(e => console.log('[Puppeteer] Failed to re-inject on URL change:', e.message));
+          }
+        } catch (e) {
+          // Page might be navigating or closed - ignore
+        }
+      }, 500);
+
+      // Clean up interval when page closes
+      page.on('close', () => {
+        console.log('[Puppeteer] Page closed, clearing URL poll interval');
+        clearInterval(urlPollInterval);
+      });
+
       console.log('[Puppeteer] ============================================');
       console.log('[Puppeteer] NEXT STEPS:');
       console.log('[Puppeteer] 1. Complete the Simple Practice workflow');
       console.log('[Puppeteer] 2. Click "Capture Simple Practice ID" button');
-      console.log('[Puppeteer] 3. Click "Close & Save ID" when ready');
+      console.log('[Puppeteer] 3. Optionally click "Upload Screener PDF"');
+      console.log('[Puppeteer] 4. Click "Close Browser" when done');
       console.log('[Puppeteer] ============================================');
 
-      // Wait for user to click Close button after capturing ID
-      console.log('[Puppeteer] Waiting for user to capture Simple Practice ID...');
+      // Poll for user actions (upload or close)
+      console.log('[Puppeteer] Waiting for user actions...');
 
-      const capturedId = await page.evaluate(() => {
-        return new Promise((resolve) => {
-          // Poll for close button click
-          const checkForClose = setInterval(() => {
-            const closeBtn = document.getElementById('puppeteer-close-btn');
+      let uploadComplete = false;
+      let capturedId: string | null = null;
 
-            if (closeBtn) {
-              closeBtn.addEventListener('click', () => {
-                clearInterval(checkForClose);
+      // Main polling loop
+      while (true) {
+        // Check for flags
+        const flags = await page.evaluate(() => ({
+          uploadRequested: window['uploadRequested'] || false,
+          closeRequested: window['closeRequested'] || false,
+          capturedId: window['capturedSimplePracticeId'] || null,
+        }));
 
-                // Get captured ID from window object
-                const capturedId = window['capturedSimplePracticeId'];
-                resolve(capturedId);
-              }, { once: true }); // Use once option to avoid multiple listeners
+        capturedId = flags.capturedId;
+
+        // Handle upload request
+        if (flags.uploadRequested && !uploadComplete) {
+          console.log('[Puppeteer] Upload requested, performing upload...');
+
+          // Reset the flag
+          await page.evaluate(() => {
+            window['uploadRequested'] = false;
+          });
+
+          // Update popup to show uploading state
+          await page.evaluate(() => {
+            window['renderButtonState']('uploading');
+          });
+
+          // Perform the upload
+          try {
+            // Get PDF from database
+            const client = await prisma.client.findUnique({
+              where: { id: clientDataWithOrigin.clientId },
+              select: { screenerPdfData: true, simplePracticeId: true }
+            });
+
+            if (!client?.screenerPdfData) {
+              throw new Error('No PDF generated. Please generate the screener PDF first.');
             }
-          }, 500); // Check every 500ms
 
-          // Timeout after 30 minutes
-          setTimeout(() => {
-            clearInterval(checkForClose);
-            resolve(null);
-          }, 1800000);
-        });
-      });
+            const spId = client.simplePracticeId || capturedId;
+            if (!spId) {
+              throw new Error('Simple Practice ID not found');
+            }
 
-      if (capturedId) {
-        console.log('[Puppeteer] ✓ SUCCESS! Simple Practice ID captured:', capturedId);
-        console.log('[Puppeteer] Browser will remain open. Please close it manually when ready.');
+            console.log('[Puppeteer] Navigating to documents page...');
 
-        // DO NOT close browser - user closes manually
-        // Monitor for browser close (user closes manually)
-        browser.on('disconnected', () => {
-          console.log('[Puppeteer] Browser closed by user');
-        });
+            // Navigate to documents page
+            await page.goto(`https://secure.simplepractice.com/clients/${spId}/documents`, {
+              waitUntil: 'domcontentloaded',
+              timeout: 30000
+            });
 
-        // Wait a bit to allow response to be sent before function ends
-        await new Promise(resolve => setTimeout(resolve, 1000));
+            await page.waitForTimeout(2000);
 
-        return NextResponse.json({
-          success: true,
-          simplePracticeId: capturedId,
-          message: 'Client ID captured successfully. Browser remains open - close manually when ready.'
-        });
-      } else {
-        console.log('[Puppeteer] ✗ Timeout or no ID captured');
-        console.log('[Puppeteer] Browser will remain open');
+            // Write PDF to temp file
+            const fs = require('fs');
+            const path = require('path');
+            const pdfBuffer = Buffer.from(client.screenerPdfData, 'base64');
+            const tmpFilePath = path.join('/tmp', `screener-${clientDataWithOrigin.clientId}-${Date.now()}.pdf`);
+            fs.writeFileSync(tmpFilePath, pdfBuffer);
+            console.log('[Puppeteer] Temp file created:', tmpFilePath);
 
-        // Don't close browser - let user see what happened
-        return NextResponse.json({
-          success: false,
-          error: 'No Simple Practice ID was captured. Please try again or enter manually.',
-          message: 'Browser remains open - close manually when ready.'
-        }, { status: 400 });
+            // Try to click upload button
+            console.log('[Puppeteer] Looking for upload button...');
+
+            try {
+              const actionsButton = page.locator('button:has-text("Actions")').first();
+              await actionsButton.click();
+              await page.waitForTimeout(500);
+
+              const uploadOption = page.locator('button:has-text("Upload File"), a:has-text("Upload File")').first();
+              await uploadOption.click();
+              console.log('[Puppeteer] ✓ Clicked Upload File option');
+            } catch (e) {
+              console.log('[Puppeteer] Trying direct upload button...');
+              const uploadButton = page.locator('button:has-text("Upload"), button:has-text("Add File")').first();
+              await uploadButton.click();
+            }
+
+            await page.waitForTimeout(1000);
+
+            // Handle file chooser
+            console.log('[Puppeteer] Setting up file chooser...');
+            const fileChooserPromise = page.waitForEvent('filechooser', { timeout: 10000 });
+
+            try {
+              const fileInput = page.locator('input[type="file"]').first();
+              await fileInput.click({ force: true });
+            } catch (e) {
+              console.log('[Puppeteer] Could not click file input directly');
+            }
+
+            const fileChooser = await fileChooserPromise;
+            await fileChooser.setFiles(tmpFilePath);
+            console.log('[Puppeteer] ✓ File selected');
+
+            // Wait for upload
+            await page.waitForTimeout(5000);
+
+            // Clean up temp file
+            if (fs.existsSync(tmpFilePath)) {
+              fs.unlinkSync(tmpFilePath);
+            }
+
+            // Update database
+            await prisma.client.update({
+              where: { id: clientDataWithOrigin.clientId },
+              data: { screenerUploadedToSP: true, screenerUploadError: null }
+            });
+
+            uploadComplete = true;
+            console.log('[Puppeteer] ✓ Upload completed successfully');
+
+            // Update popup to show complete state
+            await page.evaluate(() => {
+              window['uploadComplete'] = true;
+              window['renderButtonState']('complete');
+            });
+
+          } catch (uploadError: any) {
+            console.error('[Puppeteer] Upload error:', uploadError.message);
+
+            // Update database with error
+            await prisma.client.update({
+              where: { id: clientDataWithOrigin.clientId },
+              data: { screenerUploadedToSP: false, screenerUploadError: uploadError.message }
+            });
+
+            // Update popup to show error
+            await page.evaluate((errorMsg) => {
+              window['uploadError'] = errorMsg;
+              window['renderButtonState']('upload_error');
+            }, uploadError.message);
+          }
+
+          // Re-inject popup after navigation
+          await injectPopup().catch(e => console.log('[Puppeteer] Failed to re-inject:', e.message));
+          continue;
+        }
+
+        // Handle close request
+        if (flags.closeRequested) {
+          console.log('[Puppeteer] Close requested, closing browser...');
+          await browser.close();
+
+          return NextResponse.json({
+            success: true,
+            simplePracticeId: capturedId,
+            screenerUploaded: uploadComplete,
+            message: capturedId
+              ? (uploadComplete
+                ? 'Client created, ID captured, and screener uploaded successfully!'
+                : 'Client created and ID captured successfully!')
+              : 'Browser closed.'
+          });
+        }
+
+        // Wait before next poll
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Check if browser was closed externally
+        if (!browser.isConnected()) {
+          console.log('[Puppeteer] Browser disconnected');
+          return NextResponse.json({
+            success: capturedId ? true : false,
+            simplePracticeId: capturedId,
+            screenerUploaded: uploadComplete,
+            message: 'Browser was closed.'
+          });
+        }
       }
 
     } catch (error: any) {

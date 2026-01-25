@@ -22,6 +22,8 @@ import {
   Share2,
   X,
   Loader2,
+  Download,
+  Paperclip,
 } from "lucide-react";
 import CreateClientModal from "./create-client-modal";
 import SimplePracticeIdModal from "./simple-practice-id-modal";
@@ -145,6 +147,14 @@ export function SchedulingDetails({
   const [moveReason, setMoveReason] = useState("");
   const [isMoving, setIsMoving] = useState(false);
 
+  // PDF generation state
+  const [generatingPdf, setGeneratingPdf] = useState(false);
+
+  // Simple Practice ID editing state
+  const [isEditingSpId, setIsEditingSpId] = useState(false);
+  const [spIdInput, setSpIdInput] = useState("");
+  const [isSavingSpId, setIsSavingSpId] = useState(false);
+
   // Open move modal
   const openMoveModal = (action: MoveAction) => {
     setMoveAction(action);
@@ -173,6 +183,127 @@ export function SchedulingDetails({
       closeMoveModal();
     } finally {
       setIsMoving(false);
+    }
+  };
+
+  // Download screener PDF from database
+  const handleDownloadScreener = async () => {
+    try {
+      const response = await fetch(`/api/clients/${client.id}/screener`);
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch screener PDF');
+      }
+
+      const data = await response.json();
+
+      if (!data.screenerPdfData) {
+        throw new Error('No screener PDF available');
+      }
+
+      // Convert base64 to blob
+      const byteCharacters = atob(data.screenerPdfData);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'application/pdf' });
+
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = data.fileName || `screener-${client.firstName}-${client.lastName}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+
+      console.log('✓ Screener PDF downloaded');
+
+    } catch (error: any) {
+      console.error('✗ Failed to download screener:', error);
+      alert('Failed to download screener PDF. Please try again.');
+    }
+  };
+
+  // Generate screener PDF
+  const handleGeneratePdf = async () => {
+    setGeneratingPdf(true);
+    try {
+      const response = await fetch(`/api/clients/${client.id}/generate-screener`, {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate PDF');
+      }
+
+      const data = await response.json();
+
+      // Show success message
+      alert(`Screener PDF generated successfully at ${new Date(data.generatedAt).toLocaleString()}`);
+
+      // Refresh page to show PDF icon
+      window.location.reload();
+
+    } catch (error: any) {
+      console.error('Failed to generate PDF:', error);
+      alert('Failed to generate screener PDF. Please try again.');
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
+
+  // Start editing Simple Practice ID
+  const handleStartEditSpId = () => {
+    setSpIdInput(client.simplePracticeId || '');
+    setIsEditingSpId(true);
+  };
+
+  // Cancel editing Simple Practice ID
+  const handleCancelEditSpId = () => {
+    setSpIdInput('');
+    setIsEditingSpId(false);
+  };
+
+  // Save Simple Practice ID
+  const handleSaveSpId = async () => {
+    const trimmedId = spIdInput.trim();
+
+    setIsSavingSpId(true);
+    try {
+      await onSimplePracticeIdSaved(client.id, trimmedId);
+      setIsEditingSpId(false);
+      setSpIdInput('');
+      alert(trimmedId ? 'Simple Practice ID saved successfully' : 'Simple Practice ID removed successfully');
+    } catch (error: any) {
+      console.error('Failed to save Simple Practice ID:', error);
+      alert('Failed to save Simple Practice ID. Please try again.');
+    } finally {
+      setIsSavingSpId(false);
+    }
+  };
+
+  // Delete Simple Practice ID
+  const handleDeleteSpId = async () => {
+    if (!confirm('Are you sure you want to remove the Simple Practice ID?')) {
+      return;
+    }
+
+    setIsSavingSpId(true);
+    try {
+      await onSimplePracticeIdSaved(client.id, '');
+
+      // Wait a brief moment for the database to update, then reload
+      setTimeout(() => {
+        window.location.reload();
+      }, 300);
+    } catch (error: any) {
+      console.error('Failed to delete Simple Practice ID:', error);
+      alert('Failed to delete Simple Practice ID. Please try again.');
+      setIsSavingSpId(false);
     }
   };
 
@@ -256,6 +387,8 @@ export function SchedulingDetails({
       key: "screenerUploaded" as const,
       label: "Upload Screener Documents",
       completed: progress.screenerUploaded,
+      warning: client.screenerUploadedToSP === false && client.screenerPdfData !== null,
+      // Show warning if PDF was generated but upload to SP failed
     },
     {
       key: "appointmentCreated" as const,
@@ -334,6 +467,41 @@ export function SchedulingDetails({
           </button>
         </div>
         <div className="flex items-center gap-2">
+          {/* Generate PDF button */}
+          <button
+            onClick={handleGeneratePdf}
+            disabled={generatingPdf}
+            className={cn(
+              "px-4 py-2 text-sm font-medium rounded-lg transition-colors inline-flex items-center gap-2",
+              generatingPdf
+                ? "text-gray-400 bg-gray-100 cursor-not-allowed"
+                : "text-purple-700 bg-purple-100 hover:bg-purple-200"
+            )}
+          >
+            {generatingPdf ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Generating PDF...
+              </>
+            ) : (
+              <>
+                <FileText className="w-4 h-4" />
+                Generate PDF
+              </>
+            )}
+          </button>
+
+          {/* Paperclip icon if PDF exists */}
+          {client.screenerPdfData && (
+            <button
+              onClick={handleDownloadScreener}
+              className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+              title={`Generated: ${client.screenerGeneratedAt ? new Date(client.screenerGeneratedAt).toLocaleString() : 'Unknown'}`}
+            >
+              <Paperclip className="w-5 h-5" />
+            </button>
+          )}
+
           <button
             onClick={() => openMoveModal("outreach")}
             className="px-3 py-1.5 text-sm text-amber-700 hover:bg-amber-100 rounded-lg transition-colors inline-flex items-center gap-1.5"
@@ -428,21 +596,81 @@ export function SchedulingDetails({
                 <dd className="text-gray-900">{client.paymentType}</dd>
               </div>
             )}
-            {client.simplePracticeId && (
-              <div className="flex flex-col gap-1 pt-2 border-t">
-                <dt className="text-gray-500 text-xs font-medium">Simple Practice ID</dt>
-                <dd className="text-gray-900 font-mono text-xs">{client.simplePracticeId}</dd>
-                <a
-                  href={`https://secure.simplepractice.com/clients/${client.simplePracticeId}/overview`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-purple-600 hover:text-purple-700 font-medium inline-flex items-center gap-1 mt-1"
-                >
-                  View in Simple Practice
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-              </div>
-            )}
+            {/* Simple Practice ID - Always shown, editable */}
+            <div className="flex flex-col gap-2 pt-2 border-t">
+              <dt className="text-gray-500 text-xs font-medium">Simple Practice ID</dt>
+
+              {isEditingSpId ? (
+                /* Editing Mode */
+                <div className="flex flex-col gap-2">
+                  <input
+                    type="text"
+                    value={spIdInput}
+                    onChange={(e) => setSpIdInput(e.target.value)}
+                    placeholder="Enter Simple Practice ID"
+                    className="px-2 py-1 border rounded text-xs font-mono"
+                    disabled={isSavingSpId}
+                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleSaveSpId}
+                      disabled={isSavingSpId}
+                      className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isSavingSpId ? 'Saving...' : 'Save'}
+                    </button>
+                    <button
+                      onClick={handleCancelEditSpId}
+                      disabled={isSavingSpId}
+                      className="px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Display Mode */
+                <div className="flex flex-col gap-1">
+                  {client.simplePracticeId ? (
+                    <>
+                      <dd className="text-gray-900 font-mono text-xs">{client.simplePracticeId}</dd>
+                      <div className="flex items-center gap-2">
+                        <a
+                          href={`https://secure.simplepractice.com/clients/${client.simplePracticeId}/overview`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-purple-600 hover:text-purple-700 font-medium inline-flex items-center gap-1"
+                        >
+                          View in Simple Practice
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                        <button
+                          onClick={handleStartEditSpId}
+                          className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={handleDeleteSpId}
+                          disabled={isSavingSpId}
+                          className="text-xs text-red-600 hover:text-red-700 font-medium disabled:opacity-50"
+                        >
+                          {isSavingSpId ? 'Deleting...' : 'Delete'}
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <button
+                      onClick={handleStartEditSpId}
+                      className="text-xs text-blue-600 hover:text-blue-700 font-medium text-left inline-flex items-center gap-1"
+                    >
+                      <Plus className="w-3 h-3" />
+                      Add Simple Practice ID
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </dl>
         </div>
 
@@ -480,7 +708,16 @@ export function SchedulingDetails({
                     )}
                   >
                     {step.label}
+                    {step.warning && (
+                      <span
+                        className="ml-2 text-amber-600 cursor-help"
+                        title="Screener was generated but upload to Simple Practice failed. Download and upload manually."
+                      >
+                        ⚠️
+                      </span>
+                    )}
                   </span>
+
                   {step.key === 'clientCreated' && (
                     <>
                       {!step.completed ? (

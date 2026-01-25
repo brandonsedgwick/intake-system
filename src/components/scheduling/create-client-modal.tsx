@@ -174,10 +174,20 @@ export default function CreateClientModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           clientData: {
+            clientId: client.id, // Add client ID for PDF generation and database updates
             firstName: client.firstName || '',
             lastName: client.lastName || '',
             email: client.email || '',
             phone: client.phone || '',
+            dateOfBirth: client.dateOfBirth || null,
+            age: client.age || null,
+            paymentType: client.paymentType || null,
+            insuranceProvider: client.insuranceProvider || null,
+            insuranceMemberId: client.insuranceMemberId || null,
+            presentingConcerns: client.presentingConcerns || null,
+            suicideAttemptRecent: client.suicideAttemptRecent || null,
+            psychiatricHospitalization: client.psychiatricHospitalization || null,
+            additionalInfo: client.additionalInfo || null,
             dateOfBirthMonth,
             dateOfBirthDay,
             dateOfBirthYear,
@@ -190,24 +200,26 @@ export default function CreateClientModal({
 
       const data = await response.json();
 
-      if (data.success && data.simplePracticeId) {
-        onSuccess(data.simplePracticeId, 'puppeteer');
+      if (data.success) {
+        // Don't wait for simplePracticeId - it will be captured asynchronously via popup
+        // The ID capture happens in the browser when user clicks the button
         onClose();
 
-        // Show success toast with additional message
-        if (data.message) {
-          console.log('[Puppeteer Success]', data.message);
-        }
+        // Show info message to user
+        const message = data.message || 'Browser opened. Please complete the workflow in Simple Practice and click "Capture Simple Practice ID" when ready.';
+        alert(message);
+
+        console.log('[Puppeteer] Form filled successfully, browser will remain open for manual workflow');
       } else {
-        // Handle errors with more detailed messages
-        const errorMessage = data.error || 'Failed to capture Simple Practice ID';
+        // Handle errors
+        const errorMessage = data.error || 'Failed to start Puppeteer automation';
         setError(errorMessage);
 
         // Special handling for browser close (status 499 or disconnected)
         if (response.status === 499 || data.error?.toLowerCase().includes('browser')) {
           console.warn('[Puppeteer] Browser was closed before ID capture completed');
         } else if (response.status === 400) {
-          console.warn('[Puppeteer] ID capture failed:', data.error);
+          console.warn('[Puppeteer] Automation failed:', data.error);
         }
       }
     } catch (e: any) {
