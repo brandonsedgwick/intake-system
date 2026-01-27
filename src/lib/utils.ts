@@ -62,3 +62,101 @@ export function truncate(str: string, length: number): string {
   if (str.length <= length) return str;
   return str.slice(0, length) + "...";
 }
+
+// Day name to JavaScript day index (0 = Sunday, 1 = Monday, etc.)
+const DAY_NAME_TO_INDEX: Record<string, number> = {
+  sunday: 0,
+  monday: 1,
+  tuesday: 2,
+  wednesday: 3,
+  thursday: 4,
+  friday: 5,
+  saturday: 6,
+};
+
+/**
+ * Convert day name to day index (0 = Sunday, 1 = Monday, etc.)
+ */
+export function dayNameToIndex(dayName: string): number {
+  const index = DAY_NAME_TO_INDEX[dayName.toLowerCase()];
+  if (index === undefined) {
+    throw new Error(`Invalid day name: ${dayName}`);
+  }
+  return index;
+}
+
+/**
+ * Format date as ISO string (YYYY-MM-DD)
+ */
+export function formatDateISO(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Calculate the earliest possible start date for an appointment on a specific day.
+ *
+ * Logic:
+ * 1. Add leadDays to fromDate to get the earliest possible date
+ * 2. Find the next occurrence of the target appointment day on or after that date
+ *
+ * Example: If today is Monday Jan 26 and leadDays is 3:
+ * - Earliest date = Thursday Jan 29
+ * - For Wednesday appointments: Thursday > Wednesday, so next Wednesday is Feb 4
+ * - For Friday appointments: Thursday < Friday, so this Friday Jan 31 works
+ *
+ * @param appointmentDay - Day name ("Monday", "Tuesday", etc.)
+ * @param leadDays - Number of days to add for lead time (default 3)
+ * @param fromDate - Date to calculate from (default: today)
+ * @param additionalWeeks - Extra weeks to add beyond the calculated minimum (default 0)
+ * @returns ISO date string (YYYY-MM-DD) of the earliest start date
+ */
+export function calculateEarliestStartDate(
+  appointmentDay: string,
+  leadDays: number = 3,
+  fromDate: Date = new Date(),
+  additionalWeeks: number = 0
+): string {
+  // Get target day index
+  const targetDayIndex = dayNameToIndex(appointmentDay);
+
+  // Calculate earliest possible date after lead time
+  const earliestDate = new Date(fromDate);
+  earliestDate.setDate(earliestDate.getDate() + leadDays);
+
+  // Get day of week for earliest date
+  const earliestDayIndex = earliestDate.getDay();
+
+  // Calculate days until target day
+  let daysUntilTarget = targetDayIndex - earliestDayIndex;
+
+  // If target day is before or same as earliest day, go to next week
+  if (daysUntilTarget <= 0) {
+    daysUntilTarget += 7;
+  }
+
+  // Calculate the target date
+  const targetDate = new Date(earliestDate);
+  targetDate.setDate(targetDate.getDate() + daysUntilTarget);
+
+  // Add additional weeks if requested
+  if (additionalWeeks > 0) {
+    targetDate.setDate(targetDate.getDate() + (additionalWeeks * 7));
+  }
+
+  return formatDateISO(targetDate);
+}
+
+/**
+ * Format a date string for display (e.g., "Feb 4, 2026")
+ */
+export function formatDateForDisplay(dateStr: string): string {
+  const date = new Date(dateStr + 'T12:00:00'); // Add time to avoid timezone issues
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}

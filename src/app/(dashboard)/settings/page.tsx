@@ -245,6 +245,7 @@ function FollowUpSettings() {
     autoCloseDays: "",
     outreachAttemptCount: "",
     replyCheckIntervalMinutes: "",
+    schedulingLeadDays: "",
   });
 
   // Initialize form data when settings load
@@ -256,6 +257,7 @@ function FollowUpSettings() {
         autoCloseDays: settings.autoCloseDays || "7",
         outreachAttemptCount: settings.outreachAttemptCount || "3",
         replyCheckIntervalMinutes: settings.replyCheckIntervalMinutes || "5",
+        schedulingLeadDays: settings.schedulingLeadDays || "3",
       });
     }
   });
@@ -393,6 +395,33 @@ function FollowUpSettings() {
           </div>
           <p className="text-xs text-gray-500 mt-2">
             How often to automatically check Gmail for client replies. Polling pauses when the browser tab is not focused.
+          </p>
+        </div>
+      </div>
+
+      {/* Availability Scheduling Section */}
+      <div className="border-t pt-6">
+        <h3 className="font-medium text-gray-900 mb-4">Availability Scheduling</h3>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Scheduling Lead Time
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min="0"
+              max="14"
+              value={formData.schedulingLeadDays || settings?.schedulingLeadDays || "3"}
+              onChange={(e) =>
+                setFormData({ ...formData, schedulingLeadDays: e.target.value })
+              }
+              className="w-20 border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <span className="text-sm text-gray-600">days</span>
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            Minimum days between client confirmation and their first appointment.
+            This accounts for time needed for confirmation and preparation.
           </p>
         </div>
       </div>

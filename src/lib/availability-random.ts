@@ -13,6 +13,8 @@ export interface SelectedSlotInfo {
   day: string;
   time: string;
   clinicians: string[];
+  startDate?: string;   // ISO date string (YYYY-MM-DD) for earliest appointment start
+  weeksAdded?: number;  // Number of additional weeks beyond calculated minimum
 }
 
 // Options for random selection

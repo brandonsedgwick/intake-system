@@ -38,7 +38,8 @@ import {
   useInitializeOutreachAttempts,
   useUpdateOutreachAttempt,
 } from "@/hooks/use-outreach-attempts";
-import { formatRelativeTime, formatDate, cn } from "@/lib/utils";
+import { formatRelativeTime, formatDate, cn, calculateEarliestStartDate, formatDateForDisplay } from "@/lib/utils";
+import { useSettings } from "@/hooks/use-settings";
 import Link from "next/link";
 import {
   Search,
@@ -62,6 +63,7 @@ import {
   Paperclip,
   Trash2,
   Plus,
+  Minus,
   Clock,
   Circle,
   XCircle,
@@ -445,6 +447,10 @@ interface AvailabilityModalProps {
 function AvailabilityModal({ isOpen, onClose, onInsertAvailability, client }: AvailabilityModalProps) {
   const { data: slots, isLoading: slotsLoading, refetch, isFetching } = useAvailabilityFromSheets();
   const { data: bookedSlots } = useBookedSlots();
+  const { data: settings } = useSettings();
+
+  // Get scheduling lead days from settings (default to 3)
+  const schedulingLeadDays = parseInt(settings?.schedulingLeadDays || "3", 10);
 
   // Tab state
   const [activeTab, setActiveTab] = useState<"smart" | "browse">("smart");
@@ -664,7 +670,14 @@ function AvailabilityModal({ isOpen, onClose, onInsertAvailability, client }: Av
         break;
     }
 
-    setSelectedSlots(result);
+    // Add start dates to all randomly selected slots
+    const resultWithDates = result.map(slot => ({
+      ...slot,
+      startDate: calculateEarliestStartDate(slot.day, schedulingLeadDays),
+      weeksAdded: 0,
+    }));
+
+    setSelectedSlots(resultWithDates);
   };
 
   // Add a slot to selection
@@ -672,7 +685,9 @@ function AvailabilityModal({ isOpen, onClose, onInsertAvailability, client }: Av
     setSelectedSlots(prev => {
       const existingIndex = prev.findIndex(s => s.slotId === slot.id);
       if (existingIndex === -1) {
-        return [...prev, { slotId: slot.id, day: slot.day, time: slot.time, clinicians: [clinician] }];
+        // Calculate start date for new slot
+        const startDate = calculateEarliestStartDate(slot.day, schedulingLeadDays);
+        return [...prev, { slotId: slot.id, day: slot.day, time: slot.time, clinicians: [clinician], startDate, weeksAdded: 0 }];
       }
       const existing = prev[existingIndex];
       if (existing.clinicians.includes(clinician)) {
@@ -681,6 +696,27 @@ function AvailabilityModal({ isOpen, onClose, onInsertAvailability, client }: Av
       const updated = { ...existing, clinicians: [...existing.clinicians, clinician] };
       return [...prev.slice(0, existingIndex), updated, ...prev.slice(existingIndex + 1)];
     });
+  };
+
+  // Add a week to slot's start date
+  const handleAddWeek = (slotId: string) => {
+    setSelectedSlots(prev => prev.map(slot => {
+      if (slot.slotId !== slotId) return slot;
+      const newWeeksAdded = (slot.weeksAdded || 0) + 1;
+      const newStartDate = calculateEarliestStartDate(slot.day, schedulingLeadDays, new Date(), newWeeksAdded);
+      return { ...slot, startDate: newStartDate, weeksAdded: newWeeksAdded };
+    }));
+  };
+
+  // Remove a week from slot's start date (only if weeksAdded > 0)
+  const handleRemoveWeek = (slotId: string) => {
+    setSelectedSlots(prev => prev.map(slot => {
+      if (slot.slotId !== slotId) return slot;
+      if ((slot.weeksAdded || 0) <= 0) return slot;
+      const newWeeksAdded = (slot.weeksAdded || 0) - 1;
+      const newStartDate = calculateEarliestStartDate(slot.day, schedulingLeadDays, new Date(), newWeeksAdded);
+      return { ...slot, startDate: newStartDate, weeksAdded: newWeeksAdded };
+    }));
   };
 
   // Remove a slot from selection
@@ -700,14 +736,16 @@ function AvailabilityModal({ isOpen, onClose, onInsertAvailability, client }: Av
     const lines: string[] = [];
     selectedSlots.forEach((slot) => {
       const clinicianList = slot.clinicians.join(" or ");
-      lines.push(`• ${slot.day} at ${slot.time} with ${clinicianList}`);
+      const startDateStr = slot.startDate ? ` (starting ${formatDateForDisplay(slot.startDate)})` : "";
+      lines.push(`• ${slot.day} at ${slot.time} with ${clinicianList}${startDateStr}`);
     });
 
     let availabilityText = "";
     if (lines.length === 1) {
       const slot = selectedSlots[0];
       const clinicianList = slot.clinicians.join(" or ");
-      availabilityText = `I have availability on ${slot.day} at ${slot.time} with ${clinicianList}.`;
+      const startDateStr = slot.startDate ? `, starting ${formatDateForDisplay(slot.startDate)}` : "";
+      availabilityText = `I have availability on ${slot.day} at ${slot.time} with ${clinicianList}${startDateStr}.`;
     } else {
       availabilityText = `I have the following availability:\n${lines.join("\n")}`;
     }
@@ -1270,27 +1308,61 @@ function AvailabilityModal({ isOpen, onClose, onInsertAvailability, client }: Av
                         {selectedSlots.map((slot, index) => (
                           <div
                             key={slot.slotId}
-                            className="flex items-center justify-between p-4 bg-white border border-purple-200 rounded-xl shadow-sm"
+                            className="p-4 bg-white border border-purple-200 rounded-xl shadow-sm"
                           >
-                            <div className="flex items-center gap-4">
-                              <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center text-purple-600 font-semibold">
-                                {index + 1}
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center text-purple-600 font-semibold">
+                                  {index + 1}
+                                </div>
+                                <div>
+                                  <p className="font-medium text-gray-900">{slot.day} at {slot.time}</p>
+                                  <p className="text-sm text-gray-500">{slot.clinicians.join(" or ")}</p>
+                                </div>
                               </div>
-                              <div>
-                                <p className="font-medium text-gray-900">{slot.day} at {slot.time}</p>
-                                <p className="text-sm text-gray-500">{slot.clinicians.join(" or ")}</p>
+                              <div className="flex items-center gap-2">
+                                {wasOffered(slot.slotId) && (
+                                  <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-lg">Previously offered</span>
+                                )}
+                                <button
+                                  onClick={() => removeSlotFromSelection(slot.slotId)}
+                                  className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
+                                >
+                                  <X className="w-5 h-5" />
+                                </button>
                               </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              {wasOffered(slot.slotId) && (
-                                <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-lg">Previously offered</span>
-                              )}
-                              <button
-                                onClick={() => removeSlotFromSelection(slot.slotId)}
-                                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
-                              >
-                                <X className="w-5 h-5" />
-                              </button>
+                            {/* Start Date Row */}
+                            <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
+                              <div className="flex items-center gap-2">
+                                <Calendar className="w-4 h-4 text-gray-400" />
+                                <span className="text-sm text-gray-600">
+                                  Starting: <span className="font-medium text-gray-900">{slot.startDate ? formatDateForDisplay(slot.startDate) : "Not set"}</span>
+                                </span>
+                                {(slot.weeksAdded || 0) > 0 && (
+                                  <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                                    +{slot.weeksAdded} wk{(slot.weeksAdded || 0) > 1 ? "s" : ""}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1">
+                                {(slot.weeksAdded || 0) > 0 && (
+                                  <button
+                                    onClick={() => handleRemoveWeek(slot.slotId)}
+                                    className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                                    title="Remove 1 week"
+                                  >
+                                    <Minus className="w-4 h-4" />
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => handleAddWeek(slot.slotId)}
+                                  className="p-1.5 text-purple-600 hover:text-purple-700 hover:bg-purple-50 rounded-lg transition-colors"
+                                  title="Add 1 week"
+                                >
+                                  <Plus className="w-4 h-4" />
+                                </button>
+                              </div>
                             </div>
                           </div>
                         ))}
@@ -1303,7 +1375,7 @@ function AvailabilityModal({ isOpen, onClose, onInsertAvailability, client }: Av
                           <p>I have the following availability:</p>
                           {selectedSlots.map((slot) => (
                             <p key={slot.slotId}>
-                              • {slot.day} at {slot.time} with {slot.clinicians.join(" or ")}
+                              • {slot.day} at {slot.time} with {slot.clinicians.join(" or ")}{slot.startDate ? ` (starting ${formatDateForDisplay(slot.startDate)})` : ""}
                             </p>
                           ))}
                         </div>
@@ -1904,6 +1976,7 @@ ${slotLines.join("\n")}
           time: slot.time,
           clinicians: slot.clinicians,
           offeredAt: now,
+          startDate: slot.startDate, // Include start date from selection
         }));
 
         // Parse existing offered slots and append new ones
@@ -2910,6 +2983,7 @@ ${slotLines.join("\n")}
               time: slot.time,
               clinicians: slot.clinicians,
               offeredAt: now,
+              startDate: slot.startDate, // Include start date from selection
             }));
 
             // Parse existing offered slots and append new ones

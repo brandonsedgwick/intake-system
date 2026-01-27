@@ -9,7 +9,7 @@ import {
   Clinician,
 } from "@/types/client";
 import { useClinicians } from "@/hooks/use-clinicians";
-import { formatDate, cn } from "@/lib/utils";
+import { formatDate, cn, formatDateForDisplay } from "@/lib/utils";
 import {
   X,
   Calendar,
@@ -176,6 +176,26 @@ export function SchedulingModal({
       if (selectedOfferedSlot && selectedOfferedSlot.clinicians.length > 1 && !selectedClinicianForSlot) {
         setError("Please select a clinician for this slot");
         return false;
+      }
+      if (!customStartDate) {
+        setError("Please select a start date");
+        return false;
+      }
+      // Validate start date matches the offered slot's day
+      if (selectedOfferedSlot) {
+        const startDateObj = new Date(customStartDate + "T12:00:00");
+        const startDayOfWeek = DAYS_OF_WEEK[startDateObj.getDay() === 0 ? 6 : startDateObj.getDay() - 1];
+        if (startDayOfWeek !== selectedOfferedSlot.day) {
+          setError(`Start date falls on ${startDayOfWeek}, but the slot is for ${selectedOfferedSlot.day}. Please adjust.`);
+          return false;
+        }
+        // Check if start date is in the future
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (startDateObj < today) {
+          setError("Start date must be in the future");
+          return false;
+        }
       }
     } else {
       // Custom mode validation
@@ -402,6 +422,10 @@ export function SchedulingModal({
                                 } else {
                                   setSelectedClinicianForSlot("");
                                 }
+                                // Pre-populate start date from offered slot if available
+                                if (slot.startDate) {
+                                  setCustomStartDate(slot.startDate);
+                                }
                               }}
                               className="mt-1 text-green-600 focus:ring-green-500"
                             />
@@ -414,6 +438,11 @@ export function SchedulingModal({
                                   ? `Clinician: ${slot.clinicians[0]}`
                                   : `Clinicians: ${slot.clinicians.join(", ")}`}
                               </p>
+                              {slot.startDate && (
+                                <p className="text-sm text-green-600 mt-1">
+                                  Starting: {formatDateForDisplay(slot.startDate)}
+                                </p>
+                              )}
                             </div>
                           </label>
 
@@ -439,6 +468,44 @@ export function SchedulingModal({
                           )}
                         </div>
                       ))}
+                    </div>
+                  )}
+
+                  {/* Start Date and Recurrence for Offered Slots */}
+                  {selectionMode === "offered" && selectedOfferedSlotId && (
+                    <div className="ml-7 space-y-4 mt-4 pt-4 border-t border-gray-200">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Start Date <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="date"
+                          value={customStartDate}
+                          onChange={(e) => setCustomStartDate(e.target.value)}
+                          min={new Date().toISOString().split("T")[0]}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                        />
+                        <p className="mt-1 text-xs text-gray-500">
+                          The first appointment date. Pre-populated from offered availability.
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Recurrence <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                          value={customRecurrence}
+                          onChange={(e) => setCustomRecurrence(e.target.value as RecurrencePattern)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                        >
+                          {RECURRENCE_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                   )}
 
