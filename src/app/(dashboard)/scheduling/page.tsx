@@ -91,6 +91,63 @@ export default function SchedulingPage() {
   // Handle progress update
   type SchedulingProgressStep = "clientCreated" | "screenerUploaded" | "appointmentCreated" | "finalized";
 
+  // Reset multiple progress steps at once (used for undo operations to avoid race conditions)
+  const handleResetProgressSteps = async (
+    clientId: string,
+    steps: SchedulingProgressStep[]
+  ) => {
+    const client = filteredClients.find((c) => c.id === clientId);
+    if (!client) return;
+
+    // Parse existing progress or create new
+    let progress: SchedulingProgress;
+    try {
+      progress = client.schedulingProgress
+        ? JSON.parse(client.schedulingProgress)
+        : {
+            clientCreated: false,
+            screenerUploaded: false,
+            appointmentCreated: false,
+            finalized: false,
+          };
+    } catch {
+      progress = {
+        clientCreated: false,
+        screenerUploaded: false,
+        appointmentCreated: false,
+        finalized: false,
+      };
+    }
+
+    // Reset all specified steps
+    for (const step of steps) {
+      (progress as unknown as Record<string, boolean | string | undefined>)[step] = false;
+      // Clear the timestamp as well
+      (progress as unknown as Record<string, boolean | string | undefined>)[`${step}At`] = undefined;
+    }
+
+    try {
+      await updateClient.mutateAsync({
+        id: clientId,
+        data: {
+          schedulingProgress: JSON.stringify(progress),
+        },
+      });
+      addToast({
+        type: "success",
+        title: "Progress reset",
+        message: `Reset ${steps.length} step(s) successfully`,
+      });
+      refetch();
+    } catch (error) {
+      addToast({
+        type: "error",
+        title: "Reset failed",
+        message: "Failed to reset progress. Please try again.",
+      });
+    }
+  };
+
   const handleProgressUpdate = async (
     clientId: string,
     step: SchedulingProgressStep,
@@ -490,12 +547,14 @@ export default function SchedulingPage() {
             <SchedulingDetails
               client={selectedClient}
               onProgressUpdate={handleProgressUpdate}
+              onResetProgressSteps={handleResetProgressSteps}
               onSimplePracticeIdSaved={handleSimplePracticeIdSaved}
               onSchedulingNotesUpdate={handleSchedulingNotesUpdate}
               onFinalize={handleFinalizeClick}
               onOpenCommunicationsModal={() => setCommunicationsModalClientId(selectedClient.id)}
               onMoveToOutreach={handleMoveToOutreach}
               onMoveToReferral={handleMoveToReferral}
+              onRefetch={refetch}
             />
           ) : (
             <div className="flex items-center justify-center h-full">
@@ -542,6 +601,12 @@ export default function SchedulingPage() {
           isOpen={!!createClientModalClient}
           onClose={() => setCreateClientModalClientId(null)}
           onSuccess={handleCreateClientSuccess}
+          onBrowserClosed={() => {
+            // Refetch data when browser closes, even if no ID was captured
+            // This picks up any partial changes (PDF generation, etc.)
+            console.log('[SchedulingPage] Browser closed, refetching data...');
+            refetch();
+          }}
         />
       )}
     </div>

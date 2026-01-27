@@ -41,6 +41,10 @@ interface SchedulingDetailsProps {
     step: SchedulingProgressStep,
     value: boolean
   ) => Promise<void>;
+  onResetProgressSteps?: (
+    clientId: string,
+    steps: SchedulingProgressStep[]
+  ) => Promise<void>;
   onSimplePracticeIdSaved: (clientId: string, simplePracticeId: string) => Promise<void>;
   onSchedulingNotesUpdate: (clientId: string, notes: string) => Promise<void>;
   onFinalize: (clientId: string) => void;
@@ -48,6 +52,7 @@ interface SchedulingDetailsProps {
   onOfferNewAvailability?: () => void; // TODO: Implement Offer New Availability feature
   onMoveToOutreach?: (clientId: string, reason: string) => Promise<void>;
   onMoveToReferral?: (clientId: string, reason: string) => Promise<void>;
+  onRefetch?: () => void; // Refresh client data
 }
 
 // Get initials from name
@@ -119,6 +124,7 @@ function parseOfferedSlots(client: Client): OfferedSlot[] {
 export function SchedulingDetails({
   client,
   onProgressUpdate,
+  onResetProgressSteps,
   onSimplePracticeIdSaved,
   onSchedulingNotesUpdate,
   onFinalize,
@@ -126,6 +132,7 @@ export function SchedulingDetails({
   onOfferNewAvailability,
   onMoveToOutreach,
   onMoveToReferral,
+  onRefetch,
 }: SchedulingDetailsProps) {
   const appointment = parseScheduledAppointment(client);
   const progress = parseSchedulingProgress(client);
@@ -354,8 +361,15 @@ export function SchedulingDetails({
       // Clear Simple Practice ID
       await onSimplePracticeIdSaved(client.id, '');
 
-      // Mark step as incomplete - this should trigger UI update
-      await onProgressUpdate(client.id, 'clientCreated', false);
+      // Reset both clientCreated and screenerUploaded in a single operation
+      // This prevents the race condition where the second update overwrites the first
+      if (onResetProgressSteps) {
+        await onResetProgressSteps(client.id, ['clientCreated', 'screenerUploaded']);
+      } else {
+        // Fallback to individual updates if new function not provided
+        await onProgressUpdate(client.id, 'clientCreated', false);
+        await onProgressUpdate(client.id, 'screenerUploaded', false);
+      }
 
       setUndoClientModalOpen(false);
       setUndoReason('');
@@ -948,6 +962,13 @@ export function SchedulingDetails({
         isOpen={createClientModalOpen}
         onClose={() => setCreateClientModalOpen(false)}
         onSuccess={handleCreateClientSuccess}
+        onBrowserClosed={() => {
+          // Refetch data when browser closes, even if no ID was captured
+          console.log('[SchedulingDetails] Browser closed, triggering refetch...');
+          if (onRefetch) {
+            onRefetch();
+          }
+        }}
       />
 
       {/* Simple Practice ID Modal */}

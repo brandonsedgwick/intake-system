@@ -24,38 +24,8 @@ export async function POST(req: NextRequest) {
 
     console.log('[Puppeteer] Starting Simple Practice automation...');
     console.log('[Puppeteer] App origin for API calls:', appOrigin);
-
-    // Pre-generate the screener PDF so it's ready for upload later
-    // This ensures the PDF exists before the user gets to the upload step
-    if (clientData.clientId) {
-      console.log('[Puppeteer] Pre-generating screener PDF...');
-      try {
-        const { generateScreenerPDF, saveScreenerPDF } = await import('@/lib/services/pdf-screener');
-        const { pdfBase64, generatedAt } = await generateScreenerPDF({
-          id: clientData.clientId,
-          firstName: clientData.firstName || '',
-          lastName: clientData.lastName || '',
-          email: clientData.email || '',
-          phone: clientData.phone || null,
-          dateOfBirth: clientData.dateOfBirth || null,
-          age: clientData.age || null,
-          paymentType: clientData.paymentType || null,
-          insuranceProvider: clientData.insuranceProvider || null,
-          insuranceMemberId: clientData.insuranceMemberId || null,
-          presentingConcerns: clientData.presentingConcerns || null,
-          suicideAttemptRecent: clientData.suicideAttemptRecent || null,
-          psychiatricHospitalization: clientData.psychiatricHospitalization || null,
-          additionalInfo: clientData.additionalInfo || null,
-        });
-        await saveScreenerPDF(clientData.clientId, pdfBase64, generatedAt);
-        console.log('[Puppeteer] ✓ Screener PDF pre-generated and saved to database');
-      } catch (pdfError: any) {
-        console.error('[Puppeteer] ⚠ PDF generation failed (will continue without PDF):', pdfError.message);
-        // Continue anyway - upload button will show appropriate error if PDF is missing
-      }
-    } else {
-      console.warn('[Puppeteer] ⚠ No clientId provided, skipping PDF pre-generation');
-    }
+    // Note: Screener PDF is auto-generated when client moves to scheduling
+    // Upload can be done separately from the scheduling page
 
     // Launch browser (visible for now per user request)
     const browser = await chromium.launch({
@@ -845,6 +815,42 @@ export async function POST(req: NextRequest) {
 
             container.appendChild(captureBtn);
 
+            // Close Browser button (always available) - gray outline style
+            const closeBtnInitial = document.createElement('button');
+            closeBtnInitial.id = 'puppeteer-close-btn';
+            closeBtnInitial.textContent = 'Close Browser & Return to App';
+            closeBtnInitial.style.cssText = `
+              width: 100%;
+              padding: 12px 24px;
+              background: transparent;
+              color: #6b7280;
+              border: 1px solid #d1d5db;
+              border-radius: 12px;
+              font-size: 14px;
+              font-weight: 500;
+              cursor: pointer;
+              transition: all 0.3s ease;
+              margin-top: 12px;
+            `;
+
+            closeBtnInitial.addEventListener('mouseenter', () => {
+              closeBtnInitial.style.borderColor = '#9ca3af';
+              closeBtnInitial.style.color = '#4b5563';
+              closeBtnInitial.style.background = '#f9fafb';
+            });
+
+            closeBtnInitial.addEventListener('mouseleave', () => {
+              closeBtnInitial.style.borderColor = '#d1d5db';
+              closeBtnInitial.style.color = '#6b7280';
+              closeBtnInitial.style.background = 'transparent';
+            });
+
+            closeBtnInitial.addEventListener('click', () => {
+              window['closeRequested'] = true;
+            });
+
+            container.appendChild(closeBtnInitial);
+
           } else if (state === 'success') {
             // Success state: Show ID + Upload button + Close button
             const successDiv = document.createElement('div');
@@ -904,47 +910,10 @@ export async function POST(req: NextRequest) {
             idDisplay.appendChild(idLabel);
             idDisplay.appendChild(idValue);
 
-            // Upload Screener button (purple)
-            const uploadBtn = document.createElement('button');
-            uploadBtn.id = 'puppeteer-upload-btn';
-            uploadBtn.textContent = 'Upload Screener PDF';
-            uploadBtn.style.cssText = `
-              width: 100%;
-              padding: 16px 24px;
-              background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-              color: white;
-              border: none;
-              border-radius: 12px;
-              font-size: 16px;
-              font-weight: 600;
-              cursor: pointer;
-              transition: all 0.3s ease;
-              box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
-              margin-bottom: 12px;
-            `;
-
-            uploadBtn.addEventListener('mouseenter', () => {
-              uploadBtn.style.transform = 'translateY(-2px)';
-              uploadBtn.style.boxShadow = '0 6px 20px rgba(139, 92, 246, 0.4)';
-            });
-
-            uploadBtn.addEventListener('mouseleave', () => {
-              uploadBtn.style.transform = 'translateY(0)';
-              uploadBtn.style.boxShadow = '0 4px 12px rgba(139, 92, 246, 0.3)';
-            });
-
-            uploadBtn.addEventListener('click', () => {
-              // Signal to server that upload is requested
-              window['uploadRequested'] = true;
-              uploadBtn.textContent = 'Uploading...';
-              uploadBtn.disabled = true;
-              uploadBtn.style.opacity = '0.7';
-            });
-
             // Close Browser button (gray outline)
             const closeBtn = document.createElement('button');
             closeBtn.id = 'puppeteer-close-btn';
-            closeBtn.textContent = 'Close Browser';
+            closeBtn.textContent = 'Close Browser & Return to App';
             closeBtn.style.cssText = `
               width: 100%;
               padding: 14px 24px;
@@ -974,7 +943,6 @@ export async function POST(req: NextRequest) {
 
             successDiv.appendChild(successHeader);
             successDiv.appendChild(idDisplay);
-            successDiv.appendChild(uploadBtn);
             successDiv.appendChild(closeBtn);
             container.appendChild(successDiv);
 
@@ -1059,7 +1027,7 @@ export async function POST(req: NextRequest) {
             // Close button
             const closeBtn = document.createElement('button');
             closeBtn.id = 'puppeteer-close-btn';
-            closeBtn.textContent = 'Close Browser';
+            closeBtn.textContent = 'Close Browser & Return to App';
             closeBtn.style.cssText = `
               width: 100%;
               padding: 14px 24px;
@@ -1189,6 +1157,42 @@ export async function POST(req: NextRequest) {
               errorDiv.appendChild(manualLink);
             }
 
+            // Close Browser button (always available)
+            const closeBtnError = document.createElement('button');
+            closeBtnError.id = 'puppeteer-close-btn';
+            closeBtnError.textContent = 'Close Browser & Return to App';
+            closeBtnError.style.cssText = `
+              width: 100%;
+              padding: 12px 24px;
+              background: transparent;
+              color: #6b7280;
+              border: 1px solid #d1d5db;
+              border-radius: 12px;
+              font-size: 14px;
+              font-weight: 500;
+              cursor: pointer;
+              transition: all 0.3s ease;
+              margin-top: 12px;
+            `;
+
+            closeBtnError.addEventListener('mouseenter', () => {
+              closeBtnError.style.borderColor = '#9ca3af';
+              closeBtnError.style.color = '#4b5563';
+              closeBtnError.style.background = '#f9fafb';
+            });
+
+            closeBtnError.addEventListener('mouseleave', () => {
+              closeBtnError.style.borderColor = '#d1d5db';
+              closeBtnError.style.color = '#6b7280';
+              closeBtnError.style.background = 'transparent';
+            });
+
+            closeBtnError.addEventListener('click', () => {
+              window['closeRequested'] = true;
+            });
+
+            errorDiv.appendChild(closeBtnError);
+
             container.appendChild(errorDiv);
 
           } else if (state === 'manual') {
@@ -1296,163 +1300,47 @@ export async function POST(req: NextRequest) {
               window['renderButtonState']('initial');
             });
 
+            // Close Browser button (always available)
+            const closeBtnManual = document.createElement('button');
+            closeBtnManual.id = 'puppeteer-close-btn';
+            closeBtnManual.textContent = 'Close Browser & Return to App';
+            closeBtnManual.style.cssText = `
+              width: 100%;
+              padding: 12px 24px;
+              background: transparent;
+              color: #6b7280;
+              border: 1px solid #d1d5db;
+              border-radius: 12px;
+              font-size: 14px;
+              font-weight: 500;
+              cursor: pointer;
+              transition: all 0.3s ease;
+              margin-top: 16px;
+            `;
+
+            closeBtnManual.addEventListener('mouseenter', () => {
+              closeBtnManual.style.borderColor = '#9ca3af';
+              closeBtnManual.style.color = '#4b5563';
+              closeBtnManual.style.background = '#f9fafb';
+            });
+
+            closeBtnManual.addEventListener('mouseleave', () => {
+              closeBtnManual.style.borderColor = '#d1d5db';
+              closeBtnManual.style.color = '#6b7280';
+              closeBtnManual.style.background = 'transparent';
+            });
+
+            closeBtnManual.addEventListener('click', () => {
+              window['closeRequested'] = true;
+            });
+
             manualDiv.appendChild(manualHeader);
             manualDiv.appendChild(input);
             manualDiv.appendChild(submitBtn);
             manualDiv.appendChild(cancelLink);
+            manualDiv.appendChild(closeBtnManual);
             container.appendChild(manualDiv);
 
-          } else if (state === 'uploading') {
-            // Uploading state: Show spinner
-            const uploadingDiv = document.createElement('div');
-            uploadingDiv.style.cssText = 'text-align: center; padding: 20px;';
-
-            const spinner = document.createElement('div');
-            spinner.style.cssText = `
-              width: 40px;
-              height: 40px;
-              border: 4px solid #e5e7eb;
-              border-top: 4px solid #8b5cf6;
-              border-radius: 50%;
-              margin: 0 auto 16px;
-              animation: spin 1s linear infinite;
-            `;
-
-            // Add keyframes for spinner
-            const styleEl = document.createElement('style');
-            styleEl.textContent = '@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }';
-            document.head.appendChild(styleEl);
-
-            const uploadingText = document.createElement('div');
-            uploadingText.textContent = 'Uploading screener PDF...';
-            uploadingText.style.cssText = 'font-weight: 600; color: #6b7280;';
-
-            const subText = document.createElement('div');
-            subText.textContent = 'Please wait...';
-            subText.style.cssText = 'font-size: 12px; color: #9ca3af; margin-top: 4px;';
-
-            uploadingDiv.appendChild(spinner);
-            uploadingDiv.appendChild(uploadingText);
-            uploadingDiv.appendChild(subText);
-            container.appendChild(uploadingDiv);
-
-          } else if (state === 'complete') {
-            // Complete state: All done, show success and close button
-            const completeDiv = document.createElement('div');
-
-            // Success header
-            const successHeader = document.createElement('div');
-            successHeader.style.cssText = `
-              padding: 16px;
-              background: linear-gradient(135deg, #10b98115, #05966905);
-              border-radius: 10px;
-              border-left: 3px solid #10b981;
-              margin-bottom: 16px;
-            `;
-
-            const row1 = document.createElement('div');
-            row1.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 8px;';
-            row1.innerHTML = '<span style="font-size: 16px;">✅</span><span style="font-weight: 600; color: #10b981;">ID Captured & Saved</span>';
-
-            const row2 = document.createElement('div');
-            row2.style.cssText = 'display: flex; align-items: center; gap: 8px;';
-            row2.innerHTML = '<span style="font-size: 16px;">✅</span><span style="font-weight: 600; color: #10b981;">Screener Uploaded</span>';
-
-            successHeader.appendChild(row1);
-            successHeader.appendChild(row2);
-
-            // All done message
-            const doneMsg = document.createElement('div');
-            doneMsg.textContent = 'All tasks completed successfully!';
-            doneMsg.style.cssText = 'text-align: center; font-size: 14px; color: #6b7280; margin-bottom: 16px;';
-
-            // Close button (prominent green)
-            const closeBtn = document.createElement('button');
-            closeBtn.id = 'puppeteer-close-btn';
-            closeBtn.textContent = 'Close Browser';
-            closeBtn.style.cssText = `
-              width: 100%;
-              padding: 16px 24px;
-              background: linear-gradient(135deg, #10b981, #059669);
-              color: white;
-              border: none;
-              border-radius: 12px;
-              font-size: 16px;
-              font-weight: 600;
-              cursor: pointer;
-              box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
-            `;
-
-            closeBtn.addEventListener('click', () => {
-              window['closeRequested'] = true;
-            });
-
-            completeDiv.appendChild(successHeader);
-            completeDiv.appendChild(doneMsg);
-            completeDiv.appendChild(closeBtn);
-            container.appendChild(completeDiv);
-
-          } else if (state === 'upload_error') {
-            // Upload error state
-            const errorDiv = document.createElement('div');
-
-            const errorHeader = document.createElement('div');
-            errorHeader.style.cssText = `
-              display: flex;
-              align-items: center;
-              gap: 12px;
-              margin-bottom: 16px;
-              padding: 16px;
-              background: linear-gradient(135deg, #f59e0b15, #d9770605);
-              border-radius: 10px;
-              border-left: 3px solid #f59e0b;
-            `;
-
-            const warningIcon = document.createElement('span');
-            warningIcon.textContent = '⚠️';
-            warningIcon.style.fontSize = '20px';
-            errorHeader.appendChild(warningIcon);
-
-            const errorMsgDiv = document.createElement('div');
-            const errorTitle = document.createElement('div');
-            errorTitle.textContent = 'Upload Failed';
-            errorTitle.style.cssText = 'font-weight: 600; color: #f59e0b;';
-            const errorDetail = document.createElement('div');
-            errorDetail.textContent = window['uploadError'] || 'Could not upload PDF';
-            errorDetail.style.cssText = 'font-size: 12px; color: #6b7280; margin-top: 2px;';
-            errorMsgDiv.appendChild(errorTitle);
-            errorMsgDiv.appendChild(errorDetail);
-            errorHeader.appendChild(errorMsgDiv);
-
-            // Note about manual upload
-            const noteText = document.createElement('div');
-            noteText.textContent = 'ID was saved. You can upload the PDF manually from the scheduling page.';
-            noteText.style.cssText = 'font-size: 13px; color: #6b7280; margin-bottom: 16px; line-height: 1.5;';
-
-            // Close button
-            const closeBtn = document.createElement('button');
-            closeBtn.id = 'puppeteer-close-btn';
-            closeBtn.textContent = 'Close Browser';
-            closeBtn.style.cssText = `
-              width: 100%;
-              padding: 14px 24px;
-              background: linear-gradient(135deg, #667eea, #764ba2);
-              color: white;
-              border: none;
-              border-radius: 12px;
-              font-size: 15px;
-              font-weight: 600;
-              cursor: pointer;
-            `;
-
-            closeBtn.addEventListener('click', () => {
-              window['closeRequested'] = true;
-            });
-
-            errorDiv.appendChild(errorHeader);
-            errorDiv.appendChild(noteText);
-            errorDiv.appendChild(closeBtn);
-            container.appendChild(errorDiv);
           }
         };
 
@@ -1517,153 +1405,23 @@ export async function POST(req: NextRequest) {
       console.log('[Puppeteer] NEXT STEPS:');
       console.log('[Puppeteer] 1. Complete the Simple Practice workflow');
       console.log('[Puppeteer] 2. Click "Capture Simple Practice ID" button');
-      console.log('[Puppeteer] 3. Optionally click "Upload Screener PDF"');
-      console.log('[Puppeteer] 4. Click "Close Browser" when done');
+      console.log('[Puppeteer] 3. Click "Close Browser" when done');
       console.log('[Puppeteer] ============================================');
 
-      // Poll for user actions (upload or close)
-      console.log('[Puppeteer] Waiting for user actions...');
+      // Poll for user close action
+      console.log('[Puppeteer] Waiting for user to capture ID and close...');
 
-      let uploadComplete = false;
       let capturedId: string | null = null;
 
       // Main polling loop
       while (true) {
         // Check for flags
         const flags = await page.evaluate(() => ({
-          uploadRequested: window['uploadRequested'] || false,
           closeRequested: window['closeRequested'] || false,
           capturedId: window['capturedSimplePracticeId'] || null,
         }));
 
         capturedId = flags.capturedId;
-
-        // Handle upload request
-        if (flags.uploadRequested && !uploadComplete) {
-          console.log('[Puppeteer] Upload requested, performing upload...');
-
-          // Reset the flag
-          await page.evaluate(() => {
-            window['uploadRequested'] = false;
-          });
-
-          // Update popup to show uploading state
-          await page.evaluate(() => {
-            window['renderButtonState']('uploading');
-          });
-
-          // Perform the upload
-          try {
-            // Get PDF from database
-            const client = await prisma.client.findUnique({
-              where: { id: clientDataWithOrigin.clientId },
-              select: { screenerPdfData: true, simplePracticeId: true }
-            });
-
-            if (!client?.screenerPdfData) {
-              throw new Error('No PDF generated. Please generate the screener PDF first.');
-            }
-
-            const spId = client.simplePracticeId || capturedId;
-            if (!spId) {
-              throw new Error('Simple Practice ID not found');
-            }
-
-            console.log('[Puppeteer] Navigating to documents page...');
-
-            // Navigate to documents page
-            await page.goto(`https://secure.simplepractice.com/clients/${spId}/documents`, {
-              waitUntil: 'domcontentloaded',
-              timeout: 30000
-            });
-
-            await page.waitForTimeout(2000);
-
-            // Write PDF to temp file
-            const fs = require('fs');
-            const path = require('path');
-            const pdfBuffer = Buffer.from(client.screenerPdfData, 'base64');
-            const tmpFilePath = path.join('/tmp', `screener-${clientDataWithOrigin.clientId}-${Date.now()}.pdf`);
-            fs.writeFileSync(tmpFilePath, pdfBuffer);
-            console.log('[Puppeteer] Temp file created:', tmpFilePath);
-
-            // Try to click upload button
-            console.log('[Puppeteer] Looking for upload button...');
-
-            try {
-              const actionsButton = page.locator('button:has-text("Actions")').first();
-              await actionsButton.click();
-              await page.waitForTimeout(500);
-
-              const uploadOption = page.locator('button:has-text("Upload File"), a:has-text("Upload File")').first();
-              await uploadOption.click();
-              console.log('[Puppeteer] ✓ Clicked Upload File option');
-            } catch (e) {
-              console.log('[Puppeteer] Trying direct upload button...');
-              const uploadButton = page.locator('button:has-text("Upload"), button:has-text("Add File")').first();
-              await uploadButton.click();
-            }
-
-            await page.waitForTimeout(1000);
-
-            // Handle file chooser
-            console.log('[Puppeteer] Setting up file chooser...');
-            const fileChooserPromise = page.waitForEvent('filechooser', { timeout: 10000 });
-
-            try {
-              const fileInput = page.locator('input[type="file"]').first();
-              await fileInput.click({ force: true });
-            } catch (e) {
-              console.log('[Puppeteer] Could not click file input directly');
-            }
-
-            const fileChooser = await fileChooserPromise;
-            await fileChooser.setFiles(tmpFilePath);
-            console.log('[Puppeteer] ✓ File selected');
-
-            // Wait for upload
-            await page.waitForTimeout(5000);
-
-            // Clean up temp file
-            if (fs.existsSync(tmpFilePath)) {
-              fs.unlinkSync(tmpFilePath);
-            }
-
-            // Update database
-            await prisma.client.update({
-              where: { id: clientDataWithOrigin.clientId },
-              data: { screenerUploadedToSP: true, screenerUploadError: null }
-            });
-
-            uploadComplete = true;
-            console.log('[Puppeteer] ✓ Upload completed successfully');
-
-            // Update popup to show complete state
-            await page.evaluate(() => {
-              window['uploadComplete'] = true;
-              window['renderButtonState']('complete');
-            });
-
-          } catch (uploadError: any) {
-            console.error('[Puppeteer] Upload error:', uploadError.message);
-
-            // Update database with error
-            await prisma.client.update({
-              where: { id: clientDataWithOrigin.clientId },
-              data: { screenerUploadedToSP: false, screenerUploadError: uploadError.message }
-            });
-
-            // Update popup to show error
-            await page.evaluate((errorMsg) => {
-              window['uploadError'] = errorMsg;
-              window['renderButtonState']('upload_error');
-            }, uploadError.message);
-          }
-
-          // Re-inject popup after navigation
-          await injectPopup().catch(e => console.log('[Puppeteer] Failed to re-inject:', e.message));
-          continue;
-        }
 
         // Handle close request
         if (flags.closeRequested) {
@@ -1673,11 +1431,8 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({
             success: true,
             simplePracticeId: capturedId,
-            screenerUploaded: uploadComplete,
             message: capturedId
-              ? (uploadComplete
-                ? 'Client created, ID captured, and screener uploaded successfully!'
-                : 'Client created and ID captured successfully!')
+              ? 'Client created and ID captured successfully!'
               : 'Browser closed.'
           });
         }
@@ -1691,7 +1446,6 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({
             success: capturedId ? true : false,
             simplePracticeId: capturedId,
-            screenerUploaded: uploadComplete,
             message: 'Browser was closed.'
           });
         }

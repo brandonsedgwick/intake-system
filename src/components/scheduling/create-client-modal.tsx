@@ -10,13 +10,15 @@ interface CreateClientModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (simplePracticeId: string, method: 'puppeteer' | 'extension') => void;
+  onBrowserClosed?: () => void; // Called when Puppeteer browser closes, to trigger refetch
 }
 
 export default function CreateClientModal({
   client,
   isOpen,
   onClose,
-  onSuccess
+  onSuccess,
+  onBrowserClosed
 }: CreateClientModalProps) {
   const [selectedMethod, setSelectedMethod] = useState<'puppeteer' | 'extension' | null>(null);
   const [loading, setLoading] = useState(false);
@@ -201,15 +203,23 @@ export default function CreateClientModal({
       const data = await response.json();
 
       if (data.success) {
-        // Don't wait for simplePracticeId - it will be captured asynchronously via popup
-        // The ID capture happens in the browser when user clicks the button
+        // Close the modal first
         onClose();
 
-        // Show info message to user
-        const message = data.message || 'Browser opened. Please complete the workflow in Simple Practice and click "Capture Simple Practice ID" when ready.';
-        alert(message);
+        // If the user captured an ID before closing, trigger success callback to refetch data
+        if (data.simplePracticeId) {
+          console.log('[Puppeteer] ID was captured:', data.simplePracticeId);
+          // Call onSuccess to trigger parent refetch and update progress
+          onSuccess(data.simplePracticeId, 'puppeteer');
+        } else {
+          console.log('[Puppeteer] Browser closed without capturing ID');
+          // Still trigger a refetch to pick up any partial changes (PDF generation, etc.)
+          if (onBrowserClosed) {
+            onBrowserClosed();
+          }
+        }
 
-        console.log('[Puppeteer] Form filled successfully, browser will remain open for manual workflow');
+        console.log('[Puppeteer] Puppeteer workflow completed');
       } else {
         // Handle errors
         const errorMessage = data.error || 'Failed to start Puppeteer automation';
