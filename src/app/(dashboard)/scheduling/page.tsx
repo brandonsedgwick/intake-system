@@ -278,6 +278,68 @@ export default function SchedulingPage() {
     }
   };
 
+  // Handle create appointment button click - launches Puppeteer to navigate to client profile
+  const handleCreateAppointment = async (clientId: string) => {
+    const client = filteredClients.find((c) => c.id === clientId);
+
+    if (!client?.simplePracticeId) {
+      addToast({
+        type: "error",
+        title: "Simple Practice ID Required",
+        message: "Please create the client in Simple Practice first.",
+      });
+      return;
+    }
+
+    if (!client?.scheduledAppointment) {
+      addToast({
+        type: "error",
+        title: "Appointment Details Required",
+        message: "No appointment details found for this client.",
+      });
+      return;
+    }
+
+    addToast({
+      type: "info",
+      title: "Opening Browser",
+      message: "Launching browser to create appointment...",
+    });
+
+    try {
+      const response = await fetch('/api/simple-practice/create-appointment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        addToast({
+          type: "success",
+          title: "Browser Closed",
+          message: "Returned to intake app.",
+        });
+        refetch();
+      } else {
+        addToast({
+          type: "error",
+          title: "Error",
+          message: data.error || "Failed to open browser.",
+        });
+      }
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "An error occurred.";
+      console.error('[SchedulingPage] Create appointment error:', error);
+      addToast({
+        type: "error",
+        title: "Error",
+        message: errorMessage,
+      });
+    }
+  };
+
   // Handle finalize button click - opens finalize modal
   const handleFinalizeClick = (clientId: string) => {
     setFinalizeModalClientId(clientId);
@@ -537,6 +599,7 @@ export default function SchedulingPage() {
               onFinalize={handleFinalizeClick}
               onCreateClient={handleCreateClientClick}
               onUploadScreener={handleUploadScreener}
+              onCreateAppointment={handleCreateAppointment}
             />
           )}
         </div>

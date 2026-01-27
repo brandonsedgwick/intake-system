@@ -20,6 +20,7 @@ interface SchedulingTableProps {
   onFinalize: (clientId: string) => void;
   onCreateClient: (clientId: string) => void;
   onUploadScreener: (clientId: string) => void;
+  onCreateAppointment: (clientId: string) => void;
 }
 
 // Get initials from name
@@ -115,6 +116,7 @@ export function SchedulingTable({
   onFinalize,
   onCreateClient,
   onUploadScreener,
+  onCreateAppointment,
 }: SchedulingTableProps) {
   return (
     <div className="flex-1 overflow-auto">
@@ -253,9 +255,7 @@ export function SchedulingTable({
                     isDone={progress.appointmentCreated}
                     colorClass="bg-teal-100 text-teal-700"
                     hoverClass="hover:bg-teal-200"
-                    onClick={() =>
-                      onProgressUpdate(client.id, "appointmentCreated", true)
-                    }
+                    onClick={() => onCreateAppointment(client.id)}
                   />
                 </td>
 
