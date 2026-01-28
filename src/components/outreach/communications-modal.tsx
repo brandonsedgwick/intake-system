@@ -18,7 +18,7 @@ import {
   AlertCircle,
   Calendar,
 } from "lucide-react";
-import { formatDate, cn } from "@/lib/utils";
+import { formatDate, cn, formatDateForDisplay } from "@/lib/utils";
 import Link from "next/link";
 
 interface CommunicationsModalProps {
@@ -84,11 +84,13 @@ export function CommunicationsModal({
     return { sent, received };
   }, [sortedCommunications]);
 
-  // Parse offered availability from client
+  // Parse offered availability from client (only active offers)
   const offeredSlots = useMemo(() => {
     if (!client.offeredAvailability) return [];
     try {
-      return JSON.parse(client.offeredAvailability) as OfferedSlot[];
+      const allSlots = JSON.parse(client.offeredAvailability) as OfferedSlot[];
+      // Filter to only active offers (isActive is true or undefined for backwards compatibility)
+      return allSlots.filter((slot) => slot.isActive !== false);
     } catch {
       return [];
     }
@@ -105,6 +107,28 @@ export function CommunicationsModal({
       return acc;
     }, {} as Record<string, OfferedSlot[]>);
   }, [offeredSlots]);
+
+  // State for text insertion into reply
+  const [insertText, setInsertText] = useState<string>("");
+  const [availabilityInserted, setAvailabilityInserted] = useState(false);
+
+  // Format selected availability as text for insertion
+  const formatAvailabilityText = () => {
+    if (selectedAvailability.length === 0) return "";
+    return `\n\nAdditional available appointment times:\n${selectedAvailability.map((slot) => `• ${slot}`).join("\n")}\n`;
+  };
+
+  // Handle "Insert into Reply" button click
+  const handleInsertAvailability = () => {
+    const text = formatAvailabilityText();
+    setInsertText(text);
+    setAvailabilityInserted(true);
+  };
+
+  // Reset insertion state when availability changes
+  useEffect(() => {
+    setAvailabilityInserted(false);
+  }, [selectedAvailability]);
 
   // Track previous status to detect changes
   const prevStatusRef = useRef(client.status);
@@ -360,6 +384,11 @@ export function CommunicationsModal({
                                   <span className="text-amber-700 ml-1">
                                     — {slot.clinicians.join(", ")}
                                   </span>
+                                  {slot.startDate && (
+                                    <span className="text-amber-600 ml-1 font-medium">
+                                      (starting {formatDateForDisplay(slot.startDate)})
+                                    </span>
+                                  )}
                                 </span>
                               </li>
                             ))}
@@ -367,6 +396,62 @@ export function CommunicationsModal({
                         </div>
                       ))}
                   </div>
+                </div>
+              )}
+
+              {/* Additional Availability Offered - shows newly selected slots */}
+              {selectedAvailability.length > 0 && (
+                <div className="px-6 py-4 border-b bg-green-50">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-green-600" />
+                      <h4 className="font-medium text-green-900">Additional Availability Offered</h4>
+                      <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                        {selectedAvailability.length} new slot{selectedAvailability.length !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={onClearAvailability}
+                        className="text-xs text-green-600 hover:text-green-800"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                  <ul className="space-y-1 mb-3">
+                    {selectedAvailability.map((slot, idx) => (
+                      <li
+                        key={idx}
+                        className="text-sm text-green-900 flex items-start gap-2 bg-white/50 rounded px-2 py-1"
+                      >
+                        <span className="text-green-500 mt-0.5">•</span>
+                        <span>{slot}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <button
+                    onClick={handleInsertAvailability}
+                    disabled={availabilityInserted}
+                    className={cn(
+                      "w-full px-3 py-2 text-sm font-medium rounded-lg flex items-center justify-center gap-2 transition-colors",
+                      availabilityInserted
+                        ? "bg-green-200 text-green-700 cursor-default"
+                        : "bg-green-600 text-white hover:bg-green-700"
+                    )}
+                  >
+                    {availabilityInserted ? (
+                      <>
+                        <CheckCircle className="w-4 h-4" />
+                        Inserted into Reply
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-4 h-4" />
+                        Insert into Reply
+                      </>
+                    )}
+                  </button>
                 </div>
               )}
 
@@ -379,6 +464,9 @@ export function CommunicationsModal({
                 onClearAvailability={onClearAvailability}
                 isSending={sendEmail.isPending}
                 compact
+                hideAvailabilityPreview={true}
+                insertText={insertText}
+                onInsertTextHandled={() => setInsertText("")}
               />
             </div>
           </div>

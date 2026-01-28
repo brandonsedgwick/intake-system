@@ -34,6 +34,10 @@ interface ReplyComposerProps {
   onClearAvailability: () => void;
   isSending?: boolean;
   compact?: boolean; // For modal view - always expanded, no collapse state
+  hideAvailabilityPreview?: boolean; // Hide the built-in preview (shown in parent instead)
+  onBodyChange?: (body: string) => void; // Callback when body changes
+  insertText?: string; // Text to insert into body (one-time trigger)
+  onInsertTextHandled?: () => void; // Callback after insert text is handled
 }
 
 export function ReplyComposer({
@@ -45,6 +49,10 @@ export function ReplyComposer({
   onClearAvailability,
   isSending = false,
   compact = false,
+  hideAvailabilityPreview = false,
+  onBodyChange,
+  insertText,
+  onInsertTextHandled,
 }: ReplyComposerProps) {
   // Get templates
   const { data: templates } = useEmailTemplates();
@@ -87,6 +95,19 @@ export function ReplyComposer({
       setSubject(getDefaultSubject());
     }
   }, [communications]);
+
+  // Handle text insertion from parent (e.g., "Insert into Reply" button)
+  useEffect(() => {
+    if (insertText) {
+      setBody((prev) => prev + insertText);
+      onInsertTextHandled?.();
+    }
+  }, [insertText, onInsertTextHandled]);
+
+  // Notify parent of body changes
+  useEffect(() => {
+    onBodyChange?.(body);
+  }, [body, onBodyChange]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -396,13 +417,13 @@ export function ReplyComposer({
             )}
           >
             <Calendar className="w-4 h-4" />
-            Offer Availability
+            Offer New Availability
           </button>
         </div>
       </div>
 
-      {/* Selected Availability Preview */}
-      {selectedAvailability.length > 0 && (
+      {/* Selected Availability Preview - can be hidden if shown in parent */}
+      {!hideAvailabilityPreview && selectedAvailability.length > 0 && (
         <div className="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-purple-800">

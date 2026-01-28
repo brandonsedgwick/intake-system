@@ -219,6 +219,7 @@ export interface OfferedSlot {
   clinicians: string[]; // clinicians offered for this slot
   offeredAt: string;    // ISO timestamp when offered
   startDate?: string;   // ISO date string (YYYY-MM-DD) for earliest appointment start
+  isActive?: boolean;   // true if this is a current offer, false if superseded by newer offers
 }
 
 // Accepted slot - when client accepts a specific slot

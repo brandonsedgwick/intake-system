@@ -473,10 +473,12 @@ export default function SchedulingPage() {
   // Handle move to outreach
   const handleMoveToOutreach = async (clientId: string, reason: string) => {
     try {
+      // Client was in scheduling, which means they had communication (agreed to appointment)
+      // Set to "in_communication" to properly reflect their status
       await updateClient.mutateAsync({
         id: clientId,
         data: {
-          status: "pending_outreach",
+          status: "in_communication",
           schedulingNotes: reason,
           // Clear scheduling-related fields
           scheduledAppointment: undefined,

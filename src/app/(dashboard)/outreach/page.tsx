@@ -72,7 +72,6 @@ import {
   MailCheck,
   Shield,
   RefreshCw,
-  RefreshCcw,
   Shuffle,
   Sparkles,
   Filter,
@@ -779,7 +778,7 @@ function AvailabilityModal({ isOpen, onClose, onInsertAvailability, client }: Av
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/50" onClick={handleClose} />
 
@@ -1755,7 +1754,10 @@ function ReadingPane({
 
     const slotLines = slots.map((slot) => {
       const clinicianList = slot.clinicians.join(" or ");
-      return `<li style="margin-bottom: 8px;">${slot.day} at ${slot.time} with ${clinicianList}</li>`;
+      const startDateStr = slot.startDate
+        ? ` <span style="color: #059669; font-weight: 500;">(starting ${formatDateForDisplay(slot.startDate)})</span>`
+        : "";
+      return `<li style="margin-bottom: 8px;">${slot.day} at ${slot.time} with ${clinicianList}${startDateStr}</li>`;
     });
 
     return `<hr style="border: none; border-top: 2px solid #d1d5db; margin: 24px 0;">
@@ -1977,9 +1979,10 @@ ${slotLines.join("\n")}
           clinicians: slot.clinicians,
           offeredAt: now,
           startDate: slot.startDate, // Include start date from selection
+          isActive: true, // Mark new slots as active
         }));
 
-        // Parse existing offered slots and append new ones
+        // Parse existing offered slots
         let existingSlots: OfferedSlot[] = [];
         if (client.offeredAvailability) {
           try {
@@ -1989,7 +1992,14 @@ ${slotLines.join("\n")}
           }
         }
 
-        const allOfferedSlots = [...existingSlots, ...newOfferedSlots];
+        // Mark all existing slots as inactive (superseded by new offer)
+        const inactiveExistingSlots = existingSlots.map((slot) => ({
+          ...slot,
+          isActive: false,
+        }));
+
+        // Combine: inactive existing + active new
+        const allOfferedSlots = [...inactiveExistingSlots, ...newOfferedSlots];
         console.log("Saving offered slots:", allOfferedSlots);
 
         try {
@@ -2162,49 +2172,9 @@ ${slotLines.join("\n")}
           )}
         </Dropdown>
 
-        {/* Availability Buttons - Show different options for follow-ups */}
-        {isFollowUp && previouslyOfferedSlots.length > 0 ? (
-          <>
-            {/* Offer Previous Slots Button */}
-            <button
-              onClick={() => {
-                setUsePreviousSlots(true);
-              }}
-              className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-lg transition-colors",
-                usePreviousSlots
-                  ? "bg-green-600 text-white"
-                  : "text-green-700 bg-green-50 border border-green-200 hover:bg-green-100"
-              )}
-              title="Reuse the availability slots offered in previous outreach"
-            >
-              <RefreshCcw className="w-4 h-4" />
-              {usePreviousSlots ? `Using Previous (${previouslyOfferedSlots.length})` : "Offer Previous Slots"}
-            </button>
-
-            {/* Offer New Availability Button */}
-            <button
-              onClick={() => {
-                setUsePreviousSlots(false);
-                setPendingOfferedSlots([]);
-                setShowAvailabilityModal(true);
-              }}
-              className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-lg transition-colors",
-                !usePreviousSlots && pendingOfferedSlots.length > 0
-                  ? "bg-purple-600 text-white"
-                  : "text-purple-700 bg-purple-50 border border-purple-200 hover:bg-purple-100"
-              )}
-              title="Select new availability slots to offer"
-            >
-              <Calendar className="w-4 h-4" />
-              {!usePreviousSlots && pendingOfferedSlots.length > 0
-                ? `New Slots (${pendingOfferedSlots.length})`
-                : "Offer New Availability"}
-            </button>
-          </>
-        ) : (
-          /* Initial outreach - just show Find Availability */
+        {/* Availability Button - Conditional based on outreach stage */}
+        {/* Initial outreach: Show "Find Availability" only if no availability has been offered yet */}
+        {!isFollowUp && previouslyOfferedSlots.length === 0 && (
           <button
             onClick={() => setShowAvailabilityModal(true)}
             className={cn(
@@ -2218,6 +2188,29 @@ ${slotLines.join("\n")}
             {pendingOfferedSlots.length > 0
               ? `Availability (${pendingOfferedSlots.length} slots)`
               : "Find Availability"}
+          </button>
+        )}
+
+        {/* Follow-up outreach: Show "Offer New Availability" button */}
+        {isFollowUp && (
+          <button
+            onClick={() => {
+              setUsePreviousSlots(false);
+              setPendingOfferedSlots([]);
+              setShowAvailabilityModal(true);
+            }}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-lg transition-colors",
+              pendingOfferedSlots.length > 0
+                ? "bg-purple-600 text-white"
+                : "text-purple-700 bg-purple-50 border border-purple-200 hover:bg-purple-100"
+            )}
+            title="Select new availability slots to offer"
+          >
+            <Calendar className="w-4 h-4" />
+            {pendingOfferedSlots.length > 0
+              ? `New Slots (${pendingOfferedSlots.length})`
+              : "Offer New Availability"}
           </button>
         )}
 
@@ -2685,9 +2678,12 @@ ${slotLines.join("\n")}
           // If communications modal is open, update communications availability state
           if (showCommunicationsModal) {
             console.log("Setting communicationsSelectedAvailability for modal display");
-            const slotStrings = selectedSlots.map(
-              (slot) => `${slot.day} at ${slot.time} with ${slot.clinicians.join(" or ")}`
-            );
+            const slotStrings = selectedSlots.map((slot) => {
+              const base = `${slot.day} at ${slot.time} with ${slot.clinicians.join(" or ")}`;
+              return slot.startDate
+                ? `${base} (starting ${formatDateForDisplay(slot.startDate)})`
+                : base;
+            });
             setCommunicationsSelectedAvailability(slotStrings);
             console.log("communicationsSelectedAvailability set to:", slotStrings);
           }
@@ -2984,9 +2980,10 @@ ${slotLines.join("\n")}
               clinicians: slot.clinicians,
               offeredAt: now,
               startDate: slot.startDate, // Include start date from selection
+              isActive: true, // Mark new slots as active
             }));
 
-            // Parse existing offered slots and append new ones
+            // Parse existing offered slots
             let existingSlots: OfferedSlot[] = [];
             if (client.offeredAvailability) {
               try {
@@ -2996,7 +2993,14 @@ ${slotLines.join("\n")}
               }
             }
 
-            const allOfferedSlots = [...existingSlots, ...newOfferedSlots];
+            // Mark all existing slots as inactive (superseded by new offer)
+            const inactiveExistingSlots = existingSlots.map((slot) => ({
+              ...slot,
+              isActive: false,
+            }));
+
+            // Combine: inactive existing + active new
+            const allOfferedSlots = [...inactiveExistingSlots, ...newOfferedSlots];
             console.log("Saving offered slots to client:", allOfferedSlots);
 
             await updateClientMutation.mutateAsync({
