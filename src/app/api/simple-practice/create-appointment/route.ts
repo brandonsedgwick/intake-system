@@ -408,9 +408,9 @@ export async function POST(req: NextRequest) {
 
             await saveAppointment(page);
 
-            // Update database with service code and screenshot
+            // Update database with service code, modifier code, and screenshot
             const selectedServiceCode = flags.selectedServiceCode;
-            await updateClientRecord(clientId, selectedServiceCode || undefined, screenshotBase64);
+            await updateClientRecord(clientId, selectedServiceCode || undefined, screenshotBase64, '95');
 
             await injectSuccessPopup(page, selectedServiceCode || '90837');
           } catch (error: unknown) {
@@ -1322,6 +1322,48 @@ async function fillAppointmentForm(page: Page, info: AppointmentInfo, serviceCod
   await page.waitForTimeout(400);
   await page.keyboard.press('Escape'); // Close any open dropdown
 
+  // ============================================
+  // Step 5: Fill MODIFIER CODE "95" (Telehealth)
+  // ============================================
+  console.log('[CreateAppointment] Step 5: Setting modifier code...');
+  let modifierSet = false;
+
+  try {
+    // Wait for modifier input to appear after service code selection
+    await page.waitForTimeout(500);
+
+    // The modifier input name includes the service code: input[name="modifierOne-{serviceCode}"]
+    const modifierSelectors = [
+      `input[name="modifierOne-${serviceCode}"]`,
+      'input[aria-label="Modifier one"]',
+      'input.modifier:first-of-type',
+      'input[placeholder="AA"]:first-of-type',
+    ];
+
+    for (const selector of modifierSelectors) {
+      try {
+        const modifierInput = page.locator(selector).first();
+        if (await modifierInput.isVisible({ timeout: 2000 })) {
+          await modifierInput.click();
+          await modifierInput.fill('95');
+          modifierSet = true;
+          console.log(`[CreateAppointment] ✓ Modifier code set to 95 (Telehealth) using selector: ${selector}`);
+          break;
+        }
+      } catch {
+        // Try next selector
+      }
+    }
+
+    if (!modifierSet) {
+      console.log('[CreateAppointment] ✗ Could not find modifier input - user may need to enter manually');
+    }
+  } catch (e) {
+    console.log('[CreateAppointment] Modifier code field error:', e);
+  }
+
+  await page.waitForTimeout(300);
+
   // Take after screenshot for verification
   try {
     await page.screenshot({ path: '/tmp/sp-form-after.png' });
@@ -1336,6 +1378,7 @@ async function fillAppointmentForm(page: Page, info: AppointmentInfo, serviceCod
   console.log('[CreateAppointment] Start time set:', startTimeSet);
   console.log('[CreateAppointment] End time set:', endTimeSet);
   console.log('[CreateAppointment] Service set:', serviceSet);
+  console.log('[CreateAppointment] Modifier set:', modifierSet);
   console.log('[CreateAppointment] Note: Clinician must be selected manually');
   console.log('[CreateAppointment] ========================================');
 }
@@ -1438,6 +1481,8 @@ async function injectConfirmationPopup(page: Page, info: AppointmentInfo, servic
     summaryDetails.appendChild(document.createTextNode('👨‍⚕️ ' + appointmentInfo.clinician));
     summaryDetails.appendChild(document.createElement('br'));
     summaryDetails.appendChild(document.createTextNode('📋 ' + serviceLabel));
+    summaryDetails.appendChild(document.createElement('br'));
+    summaryDetails.appendChild(document.createTextNode('📡 Modifier: 95 (Telehealth)'));
     summary.appendChild(summaryDetails);
 
     content.appendChild(summary);
@@ -1559,7 +1604,7 @@ async function saveAppointment(page: Page) {
   await page.waitForTimeout(3000);
 }
 
-async function updateClientRecord(clientId: string, serviceCode?: string, screenshotBase64?: string) {
+async function updateClientRecord(clientId: string, serviceCode?: string, screenshotBase64?: string, modifierCode?: string) {
   console.log('[CreateAppointment] Updating client record...');
 
   // Get current progress
@@ -1590,17 +1635,19 @@ async function updateClientRecord(clientId: string, serviceCode?: string, screen
     appointmentCreatedAt: new Date().toISOString(),
   };
 
-  // Update client with service code, progress, and optional screenshot
+  // Update client with service code, modifier code, progress, and optional screenshot
   await prisma.client.update({
     where: { id: clientId },
     data: {
       serviceCode: serviceCode || null,
+      modifierCode: modifierCode || '95', // Default to '95' (Telehealth) for all appointments
       appointmentScreenshot: screenshotBase64 || null,
       schedulingProgress: JSON.stringify(progressWithTimestamp),
     }
   });
 
   console.log('[CreateAppointment] ✓ Client record updated');
+  console.log('[CreateAppointment] ✓ Modifier code saved: ' + (modifierCode || '95'));
   if (screenshotBase64) {
     console.log('[CreateAppointment] ✓ Screenshot saved to database');
   }
@@ -1982,6 +2029,41 @@ async function fillSeriesAppointmentForm(
   }
   await page.waitForTimeout(400);
 
+  // Fill MODIFIER CODE "95" (Telehealth)
+  let modifierSet = false;
+  try {
+    await page.waitForTimeout(500); // Wait for modifier input to appear after service code selection
+
+    const modifierSelectors = [
+      `input[name="modifierOne-${serviceCode}"]`,
+      'input[aria-label="Modifier one"]',
+      'input.modifier:first-of-type',
+      'input[placeholder="AA"]:first-of-type',
+    ];
+
+    for (const selector of modifierSelectors) {
+      try {
+        const modifierInput = page.locator(selector).first();
+        if (await modifierInput.isVisible({ timeout: 2000 })) {
+          await modifierInput.click();
+          await modifierInput.fill('95');
+          modifierSet = true;
+          console.log(`[CreateAppointment] ✓ Modifier code set to 95 (Telehealth)`);
+          break;
+        }
+      } catch {
+        // Try next selector
+      }
+    }
+
+    if (!modifierSet) {
+      console.log('[CreateAppointment] ✗ Could not find modifier input');
+    }
+  } catch (e) {
+    console.log('[CreateAppointment] Modifier code field error:', e);
+  }
+  await page.waitForTimeout(300);
+
   // For second appointment only: Handle RECURRING checkbox
   if (appointmentNumber === 2 && isRecurring) {
     console.log('[CreateAppointment] Checking recurring checkbox...');
@@ -2022,6 +2104,7 @@ async function fillSeriesAppointmentForm(
   console.log('[CreateAppointment] Start time set:', startTimeSet);
   console.log('[CreateAppointment] End time set:', endTimeSet);
   console.log('[CreateAppointment] Service set:', serviceSet);
+  console.log('[CreateAppointment] Modifier set:', modifierSet);
   console.log('[CreateAppointment] ========================================');
 }
 
@@ -2132,6 +2215,8 @@ async function injectSeriesConfirmationPopup(
     summaryDetails.appendChild(document.createTextNode('👨‍⚕️ ' + appointmentInfo.clinician));
     summaryDetails.appendChild(document.createElement('br'));
     summaryDetails.appendChild(document.createTextNode('📋 ' + serviceLabel));
+    summaryDetails.appendChild(document.createElement('br'));
+    summaryDetails.appendChild(document.createTextNode('📡 Modifier: 95 (Telehealth)'));
     if (apptNum === 2 && isRecurring) {
       summaryDetails.appendChild(document.createElement('br'));
       summaryDetails.appendChild(document.createTextNode('🔁 Recurring appointment'));
@@ -2338,6 +2423,7 @@ async function updateClientRecordWithSeriesData(
     where: { id: clientId },
     data: {
       serviceCode: displayServiceCode,
+      modifierCode: '95', // Telehealth modifier for all appointments
       appointmentScreenshot: seriesData.firstAppointment.screenshot,
       appointmentSeriesData: JSON.stringify(seriesData),
       schedulingProgress: JSON.stringify(progressWithTimestamp),
@@ -2346,4 +2432,5 @@ async function updateClientRecordWithSeriesData(
 
   console.log('[CreateAppointment] ✓ Client record updated with series data');
   console.log('[CreateAppointment] ✓ Service code:', displayServiceCode);
+  console.log('[CreateAppointment] ✓ Modifier code: 95');
 }

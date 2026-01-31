@@ -154,6 +154,7 @@ export interface Client {
   scheduledAppointment?: string; // JSON string of ScheduledAppointment
   schedulingProgress?: string; // JSON string of SchedulingProgress
   serviceCode?: string; // 90837 (Psychotherapy) or 90791 (Psych Eval)
+  modifierCode?: string; // Modifier code (e.g., "95" for telehealth)
   appointmentScreenshot?: string | null; // Base64-encoded screenshot of appointment form
   appointmentSeriesData?: string; // JSON string of AppointmentSeriesData for series appointments
 

@@ -656,6 +656,14 @@ export function SchedulingDetails({
                   </dd>
                 </div>
               )}
+              {client.modifierCode && (
+                <div className="flex justify-between">
+                  <dt className="text-green-700">Modifier</dt>
+                  <dd className="text-green-900 font-medium">
+                    {client.modifierCode} (Telehealth)
+                  </dd>
+                </div>
+              )}
             </dl>
 
             {/* Partial Series Warning */}

@@ -311,6 +311,7 @@ model Client {
   scheduledAppointment String? // JSON object of ScheduledAppointment (full scheduling details)
   schedulingProgress   String? // JSON object of SchedulingProgress (tracks scheduling workflow steps)
   serviceCode          String? // Service code for appointment: 90837 (Psychotherapy) or 90791 (Psych Eval)
+  modifierCode         String? // Modifier code for appointment (e.g., "95" for telehealth)
   appointmentScreenshot String? // Base64-encoded screenshot of appointment form after creation
   appointmentSeriesData String? // JSON: AppointmentSeriesData for series appointments (90791 + 90837)
 

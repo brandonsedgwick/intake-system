@@ -198,6 +198,7 @@ export const clientsDbApi = {
         scheduledAppointment: updates.scheduledAppointment !== undefined ? updates.scheduledAppointment || null : existing.scheduledAppointment,
         schedulingProgress: updates.schedulingProgress !== undefined ? updates.schedulingProgress || null : existing.schedulingProgress,
         serviceCode: updates.serviceCode !== undefined ? updates.serviceCode || null : existing.serviceCode,
+        modifierCode: updates.modifierCode !== undefined ? updates.modifierCode || null : existing.modifierCode,
         appointmentScreenshot: updates.appointmentScreenshot !== undefined ? updates.appointmentScreenshot || null : existing.appointmentScreenshot,
         appointmentSeriesData: updates.appointmentSeriesData !== undefined ? updates.appointmentSeriesData || null : existing.appointmentSeriesData,
       },
@@ -270,6 +271,7 @@ function dbClientToClient(c: {
   schedulingProgress: string | null;
   schedulingNotes: string | null;
   serviceCode: string | null;
+  modifierCode: string | null;
   appointmentScreenshot: string | null;
   appointmentSeriesData: string | null;
   screenerPdfData: string | null;
@@ -326,6 +328,7 @@ function dbClientToClient(c: {
     schedulingProgress: c.schedulingProgress || undefined,
     schedulingNotes: c.schedulingNotes || undefined,
     serviceCode: c.serviceCode || undefined,
+    modifierCode: c.modifierCode || undefined,
     appointmentScreenshot: c.appointmentScreenshot || undefined,
     appointmentSeriesData: c.appointmentSeriesData || undefined,
     screenerPdfData: c.screenerPdfData || undefined,
