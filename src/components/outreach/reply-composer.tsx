@@ -580,7 +580,7 @@ export function ReplyComposer({
             onClick={handleCancel}
             className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border rounded-lg hover:bg-gray-50"
           >
-            Cancel
+            Clear
           </button>
           <button
             onClick={handleSend}

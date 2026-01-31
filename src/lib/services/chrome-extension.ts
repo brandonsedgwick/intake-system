@@ -1,3 +1,15 @@
+// Declare chrome global for TypeScript (only available in Chrome browser)
+declare const chrome: {
+  runtime: {
+    sendMessage: (
+      extensionId: string,
+      message: unknown,
+      callback: (response: FillFormResult) => void
+    ) => void;
+    lastError?: { message: string };
+  };
+} | undefined;
+
 const EXTENSION_ID = process.env.NEXT_PUBLIC_FORM_FILLER_EXTENSION_ID || 'ejjpmlmnogidonckoacipbaaagfojfkp';
 
 export interface FillFormResult {

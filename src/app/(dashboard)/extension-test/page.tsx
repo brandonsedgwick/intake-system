@@ -2,6 +2,18 @@
 
 import { useState } from 'react';
 
+// Declare chrome global for TypeScript (only available in Chrome browser)
+declare const chrome: {
+  runtime: {
+    sendMessage: (
+      extensionId: string,
+      message: unknown,
+      callback: (response: unknown) => void
+    ) => void;
+    lastError?: { message: string };
+  };
+} | undefined;
+
 const EXTENSION_ID = 'ejjpmlmnogidonckoacipbaaagfojfkp'; // Your extension ID
 
 export default function ExtensionTestPage() {

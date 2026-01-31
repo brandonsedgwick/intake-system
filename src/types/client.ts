@@ -153,6 +153,9 @@ export interface Client {
   acceptedSlot?: string; // JSON string of AcceptedSlot
   scheduledAppointment?: string; // JSON string of ScheduledAppointment
   schedulingProgress?: string; // JSON string of SchedulingProgress
+  serviceCode?: string; // 90837 (Psychotherapy) or 90791 (Psych Eval)
+  appointmentScreenshot?: string | null; // Base64-encoded screenshot of appointment form
+  appointmentSeriesData?: string; // JSON string of AppointmentSeriesData for series appointments
 
   // Closure
   closedDate?: string;
@@ -520,4 +523,39 @@ export function getAttemptLabel(attemptNumber: number): string {
 // Client with outreach attempts included
 export interface ClientWithOutreachAttempts extends Client {
   outreachAttempts?: OutreachAttempt[];
+}
+
+// ============================================
+// Service Code Types
+// ============================================
+
+export type ServiceCode = "90837" | "90791" | "90791 & 90837" | "90791 & 90837 (recurring)";
+
+export const SERVICE_CODE_OPTIONS: { value: ServiceCode; label: string }[] = [
+  { value: "90837", label: "90837 - Psychotherapy, 53-60 min" },
+  { value: "90791", label: "90791 - Psychiatric Diagnostic Evaluation" },
+];
+
+// ============================================
+// Appointment Series Types
+// ============================================
+
+export interface AppointmentSeriesData {
+  isSeries: boolean;
+  isPartial: boolean; // true if only first appointment completed
+  firstAppointment: {
+    serviceCode: "90791";
+    date: string; // ISO date string
+    time: string;
+    screenshot: string; // base64
+    createdAt: string; // ISO timestamp
+  };
+  secondAppointment?: {
+    serviceCode: "90837";
+    date: string; // ISO date string (1 week after first)
+    time: string;
+    isRecurring: boolean;
+    screenshot: string; // base64
+    createdAt: string; // ISO timestamp
+  };
 }

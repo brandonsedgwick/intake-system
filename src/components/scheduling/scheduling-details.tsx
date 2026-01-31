@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import { Client, ScheduledAppointment, SchedulingProgress, OfferedSlot } from "@/types/client";
+import { Client, ScheduledAppointment, SchedulingProgress, OfferedSlot, AppointmentSeriesData } from "@/types/client";
 import { cn, formatDate } from "@/lib/utils";
 import {
   Calendar,
@@ -24,6 +24,7 @@ import {
   Loader2,
   Download,
   Paperclip,
+  AlertTriangle,
 } from "lucide-react";
 import CreateClientModal from "./create-client-modal";
 import SimplePracticeIdModal from "./simple-practice-id-modal";
@@ -94,6 +95,40 @@ function parseSchedulingProgress(client: Client): SchedulingProgress {
   }
 }
 
+// Parse appointment series data from client
+function parseAppointmentSeriesData(client: Client): AppointmentSeriesData | null {
+  if (!client.appointmentSeriesData) return null;
+  try {
+    return JSON.parse(client.appointmentSeriesData) as AppointmentSeriesData;
+  } catch {
+    return null;
+  }
+}
+
+// Format service code display
+function formatServiceCode(serviceCode: string | undefined, seriesData: AppointmentSeriesData | null): string {
+  if (!serviceCode) return "—";
+
+  // Check if it's a partial series
+  if (seriesData?.isSeries && seriesData.isPartial) {
+    return '90791 (partial - 1 of 2)';
+  }
+
+  // Check if it's a complete series code
+  if (serviceCode === '90791 & 90837') {
+    return '90791 & 90837';
+  }
+  if (serviceCode === '90791 & 90837 (recurring)') {
+    return '90791 & 90837 (recurring)';
+  }
+
+  // Single appointment codes
+  if (serviceCode === '90837') return '90837 - Psychotherapy';
+  if (serviceCode === '90791') return '90791 - Psych Eval';
+
+  return serviceCode;
+}
+
 // Format recurrence pattern for display
 function formatRecurrence(recurrence: string | undefined): string {
   if (!recurrence) return "—";
@@ -147,6 +182,15 @@ export function SchedulingDetails({
   const [undoClientModalOpen, setUndoClientModalOpen] = useState(false);
   const [undoReason, setUndoReason] = useState("");
   const [isUndoing, setIsUndoing] = useState(false);
+
+  // Undo appointment creation modal state
+  const [undoAppointmentModalOpen, setUndoAppointmentModalOpen] = useState(false);
+  const [undoAppointmentReason, setUndoAppointmentReason] = useState("");
+  const [isUndoingAppointment, setIsUndoingAppointment] = useState(false);
+
+  // Screenshot viewer modal state
+  const [screenshotViewerOpen, setScreenshotViewerOpen] = useState(false);
+  const [seriesScreenshotIndex, setSeriesScreenshotIndex] = useState<0 | 1>(0); // 0 = first (90791), 1 = second (90837)
 
   // Move action modal state
   const [moveModalOpen, setMoveModalOpen] = useState(false);
@@ -378,6 +422,38 @@ export function SchedulingDetails({
     }
   };
 
+  // Handle undo appointment creation
+  const handleUndoAppointmentCreation = async () => {
+    if (!undoAppointmentReason.trim()) return;
+
+    setIsUndoingAppointment(true);
+    try {
+      // Store the undo reason in scheduling notes first
+      const currentNotes = client.schedulingNotes || '';
+      const timestamp = new Date().toLocaleString();
+      const newNote = `[${timestamp}] Undid appointment creation: ${undoAppointmentReason.trim()}`;
+      const updatedNotes = currentNotes ? `${currentNotes}\n${newNote}` : newNote;
+      await onSchedulingNotesUpdate(client.id, updatedNotes);
+
+      // Reset appointmentCreated step
+      if (onResetProgressSteps) {
+        await onResetProgressSteps(client.id, ['appointmentCreated']);
+      } else {
+        await onProgressUpdate(client.id, 'appointmentCreated', false);
+      }
+
+      setUndoAppointmentModalOpen(false);
+      setUndoAppointmentReason('');
+
+      // Refresh to clear serviceCode and screenshot
+      if (onRefetch) {
+        onRefetch();
+      }
+    } finally {
+      setIsUndoingAppointment(false);
+    }
+  };
+
   // Group offered slots by date
   const slotsByDate = useMemo(() => {
     return offeredSlots.reduce((acc, slot) => {
@@ -542,6 +618,7 @@ export function SchedulingDetails({
             Appointment Details
           </h3>
           {appointment ? (
+            <>
             <dl className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <dt className="text-green-700">Day</dt>
@@ -571,7 +648,186 @@ export function SchedulingDetails({
                   </dd>
                 </div>
               )}
+              {client.serviceCode && (
+                <div className="flex justify-between">
+                  <dt className="text-green-700">Service Code</dt>
+                  <dd className="text-green-900 font-medium">
+                    {formatServiceCode(client.serviceCode, parseAppointmentSeriesData(client))}
+                  </dd>
+                </div>
+              )}
             </dl>
+
+            {/* Partial Series Warning */}
+            {(() => {
+              const seriesData = parseAppointmentSeriesData(client);
+              if (seriesData && seriesData.isSeries && seriesData.isPartial) {
+                return (
+                  <div className="mt-4 pt-4 border-t border-amber-200">
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3">
+                      <div className="flex items-center gap-2 text-amber-800 font-medium text-sm mb-1">
+                        <AlertTriangle className="w-4 h-4" />
+                        Incomplete Appointment Series
+                      </div>
+                      <p className="text-xs text-amber-700">
+                        Only the first appointment (90791 - Psych Eval) was created.
+                        The second appointment (90837 - Psychotherapy) still needs to be scheduled.
+                      </p>
+                    </div>
+                    {seriesData.firstAppointment.screenshot && (
+                      <div className="mt-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-medium text-purple-700">90791 - Psych Eval (Created)</span>
+                          <button
+                            onClick={() => {
+                              const link = document.createElement('a');
+                              link.href = `data:image/png;base64,${seriesData.firstAppointment.screenshot}`;
+                              link.download = `appt-90791-${client.firstName}-${client.lastName}.png`;
+                              link.click();
+                            }}
+                            className="text-[10px] text-purple-600 hover:text-purple-800"
+                          >
+                            <Download className="w-3 h-3" />
+                          </button>
+                        </div>
+                        <img
+                          src={`data:image/png;base64,${seriesData.firstAppointment.screenshot}`}
+                          alt="90791 appointment screenshot"
+                          className="w-full rounded border border-purple-200 max-h-32 object-contain bg-white cursor-pointer hover:opacity-90 transition-opacity"
+                          onClick={() => {
+                            setSeriesScreenshotIndex(0);
+                            setScreenshotViewerOpen(true);
+                          }}
+                          title="Click to view full size"
+                        />
+                        <div className="text-[10px] text-gray-500 mt-1">{formatDate(seriesData.firstAppointment.date)}</div>
+                      </div>
+                    )}
+                    <div className="mt-3 p-2 bg-gray-50 rounded border border-gray-200 text-[10px] text-gray-600">
+                      <span className="font-medium">Missing:</span> 90837 - Psychotherapy ({formatDate(seriesData.firstAppointment.date ?
+                        (() => {
+                          const d = new Date(seriesData.firstAppointment.date + 'T12:00:00');
+                          d.setDate(d.getDate() + 7);
+                          return d.toISOString().split('T')[0];
+                        })() : 'TBD')})
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
+
+            {/* Complete Series Appointment Screenshots */}
+            {(() => {
+              const seriesData = parseAppointmentSeriesData(client);
+              if (seriesData && seriesData.isSeries && !seriesData.isPartial) {
+                return (
+                  <div className="mt-4 pt-4 border-t border-green-200">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-xs font-medium text-green-800 flex items-center gap-1">
+                        <Paperclip className="w-3 h-3" />
+                        Appointment Screenshots
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      {/* First appointment screenshot (90791) */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-medium text-purple-700">90791 - Psych Eval</span>
+                          <button
+                            onClick={() => {
+                              const link = document.createElement('a');
+                              link.href = `data:image/png;base64,${seriesData.firstAppointment.screenshot}`;
+                              link.download = `appt-90791-${client.firstName}-${client.lastName}.png`;
+                              link.click();
+                            }}
+                            className="text-[10px] text-purple-600 hover:text-purple-800"
+                          >
+                            <Download className="w-3 h-3" />
+                          </button>
+                        </div>
+                        <img
+                          src={`data:image/png;base64,${seriesData.firstAppointment.screenshot}`}
+                          alt="90791 appointment screenshot"
+                          className="w-full rounded border border-purple-200 max-h-32 object-contain bg-white cursor-pointer hover:opacity-90 transition-opacity"
+                          onClick={() => {
+                            setSeriesScreenshotIndex(0);
+                            setScreenshotViewerOpen(true);
+                          }}
+                          title="Click to view full size"
+                        />
+                        <div className="text-[10px] text-gray-500 mt-1">{formatDate(seriesData.firstAppointment.date)}</div>
+                      </div>
+                      {/* Second appointment screenshot (90837) */}
+                      {seriesData.secondAppointment && (
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[10px] font-medium text-green-700">
+                              90837 - Psychotherapy{seriesData.secondAppointment.isRecurring ? ' (rec)' : ''}
+                            </span>
+                            <button
+                              onClick={() => {
+                                const link = document.createElement('a');
+                                link.href = `data:image/png;base64,${seriesData.secondAppointment!.screenshot}`;
+                                link.download = `appt-90837-${client.firstName}-${client.lastName}.png`;
+                                link.click();
+                              }}
+                              className="text-[10px] text-green-600 hover:text-green-800"
+                            >
+                              <Download className="w-3 h-3" />
+                            </button>
+                          </div>
+                          <img
+                            src={`data:image/png;base64,${seriesData.secondAppointment.screenshot}`}
+                            alt="90837 appointment screenshot"
+                            className="w-full rounded border border-green-200 max-h-32 object-contain bg-white cursor-pointer hover:opacity-90 transition-opacity"
+                            onClick={() => {
+                              setSeriesScreenshotIndex(1);
+                              setScreenshotViewerOpen(true);
+                            }}
+                            title="Click to view full size"
+                          />
+                          <div className="text-[10px] text-gray-500 mt-1">{formatDate(seriesData.secondAppointment.date)}</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
+
+            {/* Single Appointment Screenshot Viewer (non-series) */}
+            {client.appointmentScreenshot && !parseAppointmentSeriesData(client)?.isSeries && (
+              <div className="mt-4 pt-4 border-t border-green-200">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium text-green-800 flex items-center gap-1">
+                    <Paperclip className="w-3 h-3" />
+                    Appointment Screenshot
+                  </span>
+                  <button
+                    onClick={() => {
+                      const link = document.createElement('a');
+                      link.href = `data:image/png;base64,${client.appointmentScreenshot}`;
+                      link.download = `appointment-${client.firstName}-${client.lastName}.png`;
+                      link.click();
+                    }}
+                    className="text-xs text-green-600 hover:text-green-800 underline flex items-center gap-1"
+                  >
+                    <Download className="w-3 h-3" />
+                    Download
+                  </button>
+                </div>
+                <img
+                  src={`data:image/png;base64,${client.appointmentScreenshot}`}
+                  alt="Appointment form screenshot"
+                  className="w-full rounded-lg border border-green-200 max-h-48 object-contain bg-white cursor-pointer hover:opacity-90 transition-opacity"
+                  onClick={() => setScreenshotViewerOpen(true)}
+                  title="Click to view full size"
+                />
+              </div>
+            )}
+            </>
           ) : (
             <p className="text-sm text-green-700 italic">
               No appointment details available
@@ -750,6 +1006,22 @@ export function SchedulingDetails({
                         </button>
                       )}
                     </>
+                  )}
+
+                  {step.key === 'appointmentCreated' && step.completed && (
+                    <div className="flex items-center gap-2">
+                      {client.appointmentScreenshot && (
+                        <span title="Screenshot attached">
+                          <Paperclip className="w-4 h-4 text-green-600" />
+                        </span>
+                      )}
+                      <button
+                        onClick={() => setUndoAppointmentModalOpen(true)}
+                        className="text-xs text-red-600 hover:text-red-700 font-medium"
+                      >
+                        Undo
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -1062,6 +1334,160 @@ export function SchedulingDetails({
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Undo Appointment Creation Modal */}
+      {undoAppointmentModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b bg-amber-50">
+              <h2 className="text-xl font-bold text-amber-900">
+                Undo Appointment Creation
+              </h2>
+              <button
+                onClick={() => {
+                  setUndoAppointmentModalOpen(false);
+                  setUndoAppointmentReason('');
+                }}
+                className="text-amber-600 hover:text-amber-800"
+                disabled={isUndoingAppointment}
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6">
+              <p className="text-gray-700 mb-4">
+                This will reset the appointment creation step and clear the service code.
+              </p>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Reason for undoing <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={undoAppointmentReason}
+                  onChange={(e) => setUndoAppointmentReason(e.target.value)}
+                  placeholder="e.g., Wrong date/time entered, need to reschedule..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent resize-none"
+                  rows={3}
+                  autoFocus
+                />
+                <p className="mt-2 text-xs text-gray-500">
+                  This reason will be saved to the client's scheduling notes.
+                </p>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <p className="text-sm text-amber-800">
+                  <strong>Note:</strong> You'll need to create the appointment in Simple Practice again.
+                </p>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-3 p-6 border-t bg-gray-50">
+              <button
+                onClick={() => {
+                  setUndoAppointmentModalOpen(false);
+                  setUndoAppointmentReason('');
+                }}
+                disabled={isUndoingAppointment}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUndoAppointmentCreation}
+                disabled={!undoAppointmentReason.trim() || isUndoingAppointment}
+                className={cn(
+                  "px-4 py-2 text-white rounded-lg transition-colors flex items-center gap-2",
+                  !undoAppointmentReason.trim() || isUndoingAppointment
+                    ? "bg-gray-400 cursor-not-allowed"
+                    : "bg-amber-600 hover:bg-amber-700"
+                )}
+              >
+                {isUndoingAppointment ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Undoing...
+                  </>
+                ) : (
+                  'Undo Appointment Creation'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Screenshot Viewer Modal */}
+      {screenshotViewerOpen && (
+        <div
+          className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"
+          onClick={() => setScreenshotViewerOpen(false)}
+        >
+          <div className="relative max-w-[63vw] max-h-[63vh] w-full">
+            <button
+              onClick={() => setScreenshotViewerOpen(false)}
+              className="absolute -top-10 right-0 text-white hover:text-gray-300 flex items-center gap-2 text-sm"
+            >
+              <X className="w-5 h-5" />
+              Close
+            </button>
+            {(() => {
+              const seriesData = parseAppointmentSeriesData(client);
+              if (seriesData?.isSeries && !seriesData.isPartial) {
+                // Series screenshots - show selected one
+                const screenshot = seriesScreenshotIndex === 0
+                  ? seriesData.firstAppointment.screenshot
+                  : seriesData.secondAppointment?.screenshot;
+                const label = seriesScreenshotIndex === 0
+                  ? '90791 - Psychiatric Diagnostic Evaluation'
+                  : `90837 - Psychotherapy${seriesData.secondAppointment?.isRecurring ? ' (recurring)' : ''}`;
+                return (
+                  <>
+                    <div className="text-white text-center mb-2 text-sm font-medium">{label}</div>
+                    {screenshot && (
+                      <img
+                        src={`data:image/png;base64,${screenshot}`}
+                        alt="Appointment form screenshot"
+                        className="w-full h-full object-contain rounded-lg"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    )}
+                    {/* Navigation for series */}
+                    <div className="flex justify-center gap-4 mt-4">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setSeriesScreenshotIndex(0); }}
+                        className={`px-3 py-1 rounded text-sm ${seriesScreenshotIndex === 0 ? 'bg-purple-600 text-white' : 'bg-white/20 text-white'}`}
+                      >
+                        90791
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setSeriesScreenshotIndex(1); }}
+                        className={`px-3 py-1 rounded text-sm ${seriesScreenshotIndex === 1 ? 'bg-green-600 text-white' : 'bg-white/20 text-white'}`}
+                      >
+                        90837
+                      </button>
+                    </div>
+                  </>
+                );
+              }
+              // Single screenshot
+              return client.appointmentScreenshot ? (
+                <img
+                  src={`data:image/png;base64,${client.appointmentScreenshot}`}
+                  alt="Appointment form screenshot"
+                  className="w-full h-full object-contain rounded-lg"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              ) : null;
+            })()}
           </div>
         </div>
       )}

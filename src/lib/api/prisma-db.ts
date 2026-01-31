@@ -197,6 +197,9 @@ export const clientsDbApi = {
         acceptedSlot: updates.acceptedSlot !== undefined ? updates.acceptedSlot || null : existing.acceptedSlot,
         scheduledAppointment: updates.scheduledAppointment !== undefined ? updates.scheduledAppointment || null : existing.scheduledAppointment,
         schedulingProgress: updates.schedulingProgress !== undefined ? updates.schedulingProgress || null : existing.schedulingProgress,
+        serviceCode: updates.serviceCode !== undefined ? updates.serviceCode || null : existing.serviceCode,
+        appointmentScreenshot: updates.appointmentScreenshot !== undefined ? updates.appointmentScreenshot || null : existing.appointmentScreenshot,
+        appointmentSeriesData: updates.appointmentSeriesData !== undefined ? updates.appointmentSeriesData || null : existing.appointmentSeriesData,
       },
     });
     return dbClientToClient(c);
@@ -266,6 +269,9 @@ function dbClientToClient(c: {
   scheduledAppointment: string | null;
   schedulingProgress: string | null;
   schedulingNotes: string | null;
+  serviceCode: string | null;
+  appointmentScreenshot: string | null;
+  appointmentSeriesData: string | null;
   screenerPdfData: string | null;
   screenerGeneratedAt: string | null;
   screenerUploadedToSP: boolean;
@@ -319,6 +325,9 @@ function dbClientToClient(c: {
     scheduledAppointment: c.scheduledAppointment || undefined,
     schedulingProgress: c.schedulingProgress || undefined,
     schedulingNotes: c.schedulingNotes || undefined,
+    serviceCode: c.serviceCode || undefined,
+    appointmentScreenshot: c.appointmentScreenshot || undefined,
+    appointmentSeriesData: c.appointmentSeriesData || undefined,
     screenerPdfData: c.screenerPdfData || undefined,
     screenerGeneratedAt: c.screenerGeneratedAt || undefined,
     screenerUploadedToSP: c.screenerUploadedToSP || undefined,

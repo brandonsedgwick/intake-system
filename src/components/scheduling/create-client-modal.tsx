@@ -5,6 +5,18 @@ import { Client } from '@/types/client';
 import { X, Sparkles, Chrome } from 'lucide-react';
 import { fillFormWithExtension, isExtensionAvailable } from '@/lib/services/chrome-extension';
 
+// Declare chrome global for TypeScript (only available in Chrome browser)
+declare const chrome: {
+  runtime: {
+    sendMessage: (
+      extensionId: string,
+      message: unknown,
+      callback: (response: { success?: boolean; error?: string }) => void
+    ) => void;
+    lastError?: { message: string };
+  };
+} | undefined;
+
 interface CreateClientModalProps {
   client: Client;
   isOpen: boolean;

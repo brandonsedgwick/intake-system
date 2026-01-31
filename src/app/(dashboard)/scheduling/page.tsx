@@ -126,12 +126,22 @@ export default function SchedulingPage() {
       (progress as unknown as Record<string, boolean | string | undefined>)[`${step}At`] = undefined;
     }
 
+    // Build update data
+    const updateData: Record<string, unknown> = {
+      schedulingProgress: JSON.stringify(progress),
+    };
+
+    // If resetting appointmentCreated, also clear serviceCode, appointmentScreenshot, and appointmentSeriesData
+    if (steps.includes('appointmentCreated')) {
+      updateData.serviceCode = null;
+      updateData.appointmentScreenshot = null;
+      updateData.appointmentSeriesData = null;
+    }
+
     try {
       await updateClient.mutateAsync({
         id: clientId,
-        data: {
-          schedulingProgress: JSON.stringify(progress),
-        },
+        data: updateData,
       });
       addToast({
         type: "success",
@@ -405,7 +415,7 @@ export default function SchedulingPage() {
       await updateClient.mutateAsync({
         id: clientId,
         data: {
-          simplePracticeId: simplePracticeId || null,
+          simplePracticeId: simplePracticeId || undefined,
         },
       });
       console.log('[SchedulingPage] ✓ updateClient mutation successful');

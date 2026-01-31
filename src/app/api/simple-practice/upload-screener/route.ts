@@ -130,6 +130,9 @@ export async function POST(req: NextRequest) {
     // Inject floating popup using safe DOM methods
     const injectPopup = async (status: string, isError: boolean = false, showRetry: boolean = false) => {
       await page.evaluate(({ clientInfo, status, isError, showRetry }) => {
+        // Type-safe window access helper for browser code
+        const win = window as unknown as Record<string, unknown>;
+
         // Remove existing popup if any
         const existing = document.getElementById('upload-screener-popup');
         if (existing) existing.remove();
@@ -243,7 +246,7 @@ export async function POST(req: NextRequest) {
             cursor: pointer;
           `;
           retryBtn.addEventListener('click', () => {
-            window['retryRequested'] = true;
+            win['retryRequested'] = true;
           });
           buttonsDiv.appendChild(retryBtn);
         }
@@ -264,7 +267,7 @@ export async function POST(req: NextRequest) {
           cursor: pointer;
         `;
         closeBtn.addEventListener('click', () => {
-          window['closeRequested'] = true;
+          win['closeRequested'] = true;
         });
         buttonsDiv.appendChild(closeBtn);
 
@@ -303,10 +306,13 @@ export async function POST(req: NextRequest) {
 
       // Wait for user to close or retry
       while (true) {
-        const flags = await page.evaluate(() => ({
-          closeRequested: window['closeRequested'] || false,
-          retryRequested: window['retryRequested'] || false,
-        }));
+        const flags = await page.evaluate(() => {
+          const w = window as unknown as Record<string, unknown>;
+          return {
+            closeRequested: (w['closeRequested'] as boolean) || false,
+            retryRequested: (w['retryRequested'] as boolean) || false,
+          };
+        });
 
         if (flags.closeRequested) {
           await browser.close();
@@ -315,7 +321,7 @@ export async function POST(req: NextRequest) {
         }
 
         if (flags.retryRequested) {
-          await page.evaluate(() => { window['retryRequested'] = false; });
+          await page.evaluate(() => { (window as unknown as Record<string, unknown>)['retryRequested'] = false; });
           await injectPopup('Retrying... Looking for Files tab');
           continue;
         }
@@ -339,10 +345,13 @@ export async function POST(req: NextRequest) {
       await injectPopup('Could not find Actions button. Please click it manually.', true, true);
 
       while (true) {
-        const flags = await page.evaluate(() => ({
-          closeRequested: window['closeRequested'] || false,
-          retryRequested: window['retryRequested'] || false,
-        }));
+        const flags = await page.evaluate(() => {
+          const w = window as unknown as Record<string, unknown>;
+          return {
+            closeRequested: (w['closeRequested'] as boolean) || false,
+            retryRequested: (w['retryRequested'] as boolean) || false,
+          };
+        });
 
         if (flags.closeRequested) {
           await browser.close();
@@ -351,7 +360,7 @@ export async function POST(req: NextRequest) {
         }
 
         if (flags.retryRequested) {
-          await page.evaluate(() => { window['retryRequested'] = false; });
+          await page.evaluate(() => { (window as unknown as Record<string, unknown>)['retryRequested'] = false; });
           break;
         }
 
@@ -403,10 +412,13 @@ export async function POST(req: NextRequest) {
 
         // Wait for user decision
         while (true) {
-          const flags = await page.evaluate(() => ({
-            closeRequested: window['closeRequested'] || false,
-            retryRequested: window['retryRequested'] || false,
-          }));
+          const flags = await page.evaluate(() => {
+            const w = window as unknown as Record<string, unknown>;
+            return {
+              closeRequested: (w['closeRequested'] as boolean) || false,
+              retryRequested: (w['retryRequested'] as boolean) || false,
+            };
+          });
 
           if (flags.closeRequested) {
             await browser.close();
@@ -415,7 +427,7 @@ export async function POST(req: NextRequest) {
           }
 
           if (flags.retryRequested) {
-            await page.evaluate(() => { window['retryRequested'] = false; });
+            await page.evaluate(() => { (window as unknown as Record<string, unknown>)['retryRequested'] = false; });
             // Will retry in the main loop below
             break;
           }
@@ -484,10 +496,13 @@ export async function POST(req: NextRequest) {
     // Wait for user to close browser
     console.log('[Upload] Waiting for user to close browser...');
     while (true) {
-      const flags = await page.evaluate(() => ({
-        closeRequested: window['closeRequested'] || false,
-        retryRequested: window['retryRequested'] || false,
-      }));
+      const flags = await page.evaluate(() => {
+        const w = window as unknown as Record<string, unknown>;
+        return {
+          closeRequested: (w['closeRequested'] as boolean) || false,
+          retryRequested: (w['retryRequested'] as boolean) || false,
+        };
+      });
 
       if (flags.closeRequested) {
         console.log('[Upload] User requested close');
@@ -496,7 +511,7 @@ export async function POST(req: NextRequest) {
 
       if (flags.retryRequested && !uploadSuccess) {
         console.log('[Upload] User requested retry');
-        await page.evaluate(() => { window['retryRequested'] = false; });
+        await page.evaluate(() => { (window as unknown as Record<string, unknown>)['retryRequested'] = false; });
 
         // Retry the upload
         await injectPopup('Retrying upload...');

@@ -91,8 +91,9 @@ export async function POST(req: NextRequest) {
         });
       }
     } catch (error) {
-      console.log('[Puppeteer] ✗ Error loading cookies:', error.message);
-      console.log('[Puppeteer] Stack:', error.stack);
+      const err = error instanceof Error ? error : new Error(String(error));
+      console.log('[Puppeteer] ✗ Error loading cookies:', err.message);
+      console.log('[Puppeteer] Stack:', err.stack);
       console.log('[Puppeteer] Starting fresh session');
       context = await browser.newContext({
         userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -173,8 +174,9 @@ export async function POST(req: NextRequest) {
 
           console.log('[Puppeteer] ✓ Verified: Cookie file is valid');
         } catch (writeError) {
-          console.log('[Puppeteer] ✗ ERROR saving cookies:', writeError.message);
-          throw writeError;
+          const err = writeError instanceof Error ? writeError : new Error(String(writeError));
+          console.log('[Puppeteer] ✗ ERROR saving cookies:', err.message);
+          throw err;
         }
 
         console.log('[Puppeteer] You won\'t need to log in next time!');
@@ -225,7 +227,7 @@ export async function POST(req: NextRequest) {
           await page.selectOption('select[name="month"]', clientData.dateOfBirthMonth, { timeout: 5000 });
           console.log('[Puppeteer] Selected birth month');
         } catch (error) {
-          console.log('[Puppeteer] Month dropdown not found:', error.message);
+          console.log('[Puppeteer] Month dropdown not found:', error instanceof Error ? error.message : String(error));
         }
       }
       if (clientData.dateOfBirthDay) {
@@ -233,7 +235,7 @@ export async function POST(req: NextRequest) {
           await page.selectOption('select[name="day"]', clientData.dateOfBirthDay, { timeout: 5000 });
           console.log('[Puppeteer] Selected birth day');
         } catch (error) {
-          console.log('[Puppeteer] Day dropdown not found:', error.message);
+          console.log('[Puppeteer] Day dropdown not found:', error instanceof Error ? error.message : String(error));
         }
       }
       if (clientData.dateOfBirthYear) {
@@ -241,7 +243,7 @@ export async function POST(req: NextRequest) {
           await page.selectOption('select[name="year"]', clientData.dateOfBirthYear, { timeout: 5000 });
           console.log('[Puppeteer] Selected birth year');
         } catch (error) {
-          console.log('[Puppeteer] Year dropdown not found:', error.message);
+          console.log('[Puppeteer] Year dropdown not found:', error instanceof Error ? error.message : String(error));
         }
       }
 
@@ -303,7 +305,7 @@ export async function POST(req: NextRequest) {
               break;
             }
           } catch (e) {
-            console.log(`[Puppeteer]   Failed with this element: ${e.message}`);
+            console.log(`[Puppeteer]   Failed with this element: ${e instanceof Error ? e.message : String(e)}`);
           }
         }
 
@@ -326,12 +328,12 @@ export async function POST(req: NextRequest) {
               console.log('[Puppeteer] ★★★ SUCCESS! Selected Active from dropdown');
               break;
             } catch (e) {
-              console.log(`[Puppeteer] This wasn't the right dropdown: ${e.message}`);
+              console.log(`[Puppeteer] This wasn't the right dropdown: ${e instanceof Error ? e.message : String(e)}`);
             }
           }
         }
       } catch (error) {
-        console.log('[Puppeteer] Error finding Status dropdown:', error.message);
+        console.log('[Puppeteer] Error finding Status dropdown:', error instanceof Error ? error.message : String(error));
       }
 
       // Scroll down to reveal clinician, email, phone, and reminder fields
@@ -359,7 +361,7 @@ export async function POST(req: NextRequest) {
             }
           }
         } catch (error) {
-          console.log('[Puppeteer] Could not set clinician:', error.message);
+          console.log('[Puppeteer] Could not set clinician:', error instanceof Error ? error.message : String(error));
         }
       }
 
@@ -419,7 +421,7 @@ export async function POST(req: NextRequest) {
             console.log('[Puppeteer] Could not find empty visible input for email');
           }
         } catch (error) {
-          console.log('[Puppeteer] Could not add email:', error.message);
+          console.log('[Puppeteer] Could not add email:', error instanceof Error ? error.message : String(error));
         }
       }
 
@@ -475,7 +477,7 @@ export async function POST(req: NextRequest) {
             console.log('[Puppeteer] No phone inputs found!');
           }
         } catch (error) {
-          console.log('[Puppeteer] Could not add phone:', error.message);
+          console.log('[Puppeteer] Could not add phone:', error instanceof Error ? error.message : String(error));
         }
       }
 
@@ -501,7 +503,7 @@ export async function POST(req: NextRequest) {
             console.log(`[Puppeteer] Toggle ${toggleId} already checked`);
           }
         } catch (error) {
-          console.log(`[Puppeteer] Could not check toggle:`, error.message);
+          console.log(`[Puppeteer] Could not check toggle:`, error instanceof Error ? error.message : String(error));
         }
       }
 
@@ -510,6 +512,9 @@ export async function POST(req: NextRequest) {
       // Define the injection function that we'll call multiple times
       const injectPopup = async () => {
         await page.evaluate((clientInfo) => {
+          // Type-safe window access helper for browser code
+          const win = window as unknown as Record<string, unknown>;
+
           // Remove existing panel if present
           const existing = document.getElementById('puppeteer-info-panel');
           if (existing) {
@@ -538,13 +543,13 @@ export async function POST(req: NextRequest) {
 
         // Drag functionality
         let isDragging = false;
-        let currentX;
-        let currentY;
-        let initialX;
-        let initialY;
+        let currentX: number = 0;
+        let currentY: number = 0;
+        let initialX: number = 0;
+        let initialY: number = 0;
 
         infoPanel.addEventListener('mousedown', (e) => {
-          if (e.target.tagName !== 'BUTTON') {
+          if (e.target && (e.target as HTMLElement).tagName !== 'BUTTON') {
             isDragging = true;
             initialX = e.clientX - infoPanel.offsetLeft;
             initialY = e.clientY - infoPanel.offsetTop;
@@ -660,11 +665,11 @@ export async function POST(req: NextRequest) {
         console.log('[Popup] ✓ Button container created with ID:', buttonContainer.id);
 
         // Track state in window object
-        window['captureAttempts'] = 0;
-        window['capturedSimplePracticeId'] = null;
+        win['captureAttempts'] = 0;
+        win['capturedSimplePracticeId'] = null;
 
         // Function to render button states
-        window['renderButtonState'] = function(state) {
+        win['renderButtonState'] = function(state: string) {
           console.log('[renderButtonState] Called with state:', state);
           const container = document.getElementById('puppeteer-button-container');
           console.log('[renderButtonState] Container element:', container);
@@ -743,13 +748,13 @@ export async function POST(req: NextRequest) {
 
               const match = url.match(/\/clients\/([a-zA-Z0-9]+)/);
 
-              window['captureAttempts'] = (window['captureAttempts'] || 0) + 1;
-              console.log('[Popup] Capture attempt #', window['captureAttempts']);
+              win['captureAttempts'] = ((win['captureAttempts'] as number) || 0) + 1;
+              console.log('[Popup] Capture attempt #', win['captureAttempts']);
 
               if (match && match[1]) {
                 const capturedId = match[1];
                 console.log('[Popup] ✓ Found Simple Practice ID in URL:', capturedId);
-                window['capturedSimplePracticeId'] = capturedId;
+                win['capturedSimplePracticeId'] = capturedId;
 
                 // Show saving state
                 captureBtn.textContent = 'Saving...';
@@ -779,37 +784,38 @@ export async function POST(req: NextRequest) {
                     console.log('[Popup] Response data:', JSON.stringify(data));
                   } catch (jsonErr) {
                     console.error('[Popup] Failed to parse JSON response:', jsonErr);
-                    window['apiError'] = 'Invalid response from server (status ' + response.status + ')';
-                    window['renderButtonState']('api_error');
+                    win['apiError'] = 'Invalid response from server (status ' + response.status + ')';
+                    (win['renderButtonState'] as (s: string) => void)('api_error');
                     return;
                   }
 
                   if (response.ok && data.success) {
                     console.log('[Popup] ✓ ID saved successfully!');
-                    window['idSavedToDb'] = true;
-                    window['renderButtonState']('success');
+                    win['idSavedToDb'] = true;
+                    (win['renderButtonState'] as (s: string) => void)('success');
                   } else {
                     console.error('[Popup] ✗ API returned error:', data.error);
-                    window['apiError'] = data.error || 'Failed to save ID (status ' + response.status + ')';
-                    window['renderButtonState']('api_error');
+                    win['apiError'] = data.error || 'Failed to save ID (status ' + response.status + ')';
+                    (win['renderButtonState'] as (s: string) => void)('api_error');
                   }
                 } catch (err) {
-                  console.error('[Popup] ✗ Network/fetch error:', err);
-                  console.error('[Popup] Error name:', err.name);
-                  console.error('[Popup] Error message:', err.message);
+                  const e = err as Error;
+                  console.error('[Popup] ✗ Network/fetch error:', e);
+                  console.error('[Popup] Error name:', e.name);
+                  console.error('[Popup] Error message:', e.message);
 
                   // Provide more helpful error messages
-                  let errorMsg = 'Network error: ' + (err.message || 'Unknown error');
-                  if (err.message && err.message.includes('Failed to fetch')) {
+                  let errorMsg = 'Network error: ' + (e.message || 'Unknown error');
+                  if (e.message && e.message.includes('Failed to fetch')) {
                     errorMsg = 'Cannot reach server. This may be a CORS or mixed-content issue. Check that ' + clientInfo.appOrigin + ' is accessible.';
                   }
 
-                  window['apiError'] = errorMsg;
-                  window['renderButtonState']('api_error');
+                  win['apiError'] = errorMsg;
+                  (win['renderButtonState'] as (s: string) => void)('api_error');
                 }
               } else {
                 console.log('[Popup] ✗ No client ID found in URL. URL does not match pattern /clients/[id]');
-                window['renderButtonState']('error');
+                (win['renderButtonState'] as (s: string) => void)('error');
               }
             });
 
@@ -846,7 +852,7 @@ export async function POST(req: NextRequest) {
             });
 
             closeBtnInitial.addEventListener('click', () => {
-              window['closeRequested'] = true;
+              win['closeRequested'] = true;
             });
 
             container.appendChild(closeBtnInitial);
@@ -905,7 +911,7 @@ export async function POST(req: NextRequest) {
               color: #10b981;
               font-family: 'Monaco', 'Courier New', monospace;
             `;
-            idValue.textContent = window['capturedSimplePracticeId'];
+            idValue.textContent = win['capturedSimplePracticeId'] as string;
 
             idDisplay.appendChild(idLabel);
             idDisplay.appendChild(idValue);
@@ -938,7 +944,7 @@ export async function POST(req: NextRequest) {
             });
 
             closeBtn.addEventListener('click', () => {
-              window['closeRequested'] = true;
+              win['closeRequested'] = true;
             });
 
             successDiv.appendChild(successHeader);
@@ -972,7 +978,7 @@ export async function POST(req: NextRequest) {
             errorTitle.textContent = 'Failed to Save ID';
             errorTitle.style.cssText = 'font-weight: 600; color: #ef4444;';
             const errorDetail = document.createElement('div');
-            errorDetail.textContent = window['apiError'] || 'Unknown error';
+            errorDetail.textContent = (win['apiError'] as string) || 'Unknown error';
             errorDetail.style.cssText = 'font-size: 12px; color: #6b7280; margin-top: 2px; word-break: break-word;';
             errorMsgDiv.appendChild(errorTitle);
             errorMsgDiv.appendChild(errorDetail);
@@ -1021,7 +1027,7 @@ export async function POST(req: NextRequest) {
             `;
 
             retryBtn.addEventListener('click', () => {
-              window['renderButtonState']('initial');
+              (win['renderButtonState'] as (s: string) => void)('initial');
             });
 
             // Close button
@@ -1041,7 +1047,7 @@ export async function POST(req: NextRequest) {
             `;
 
             closeBtn.addEventListener('click', () => {
-              window['closeRequested'] = true;
+              win['closeRequested'] = true;
             });
 
             apiErrorDiv.appendChild(errorHeader);
@@ -1092,7 +1098,7 @@ export async function POST(req: NextRequest) {
 
             // Retry button
             const retryBtn = document.createElement('button');
-            retryBtn.textContent = `Retry (Attempt ${window['captureAttempts']})`;
+            retryBtn.textContent = `Retry (Attempt ${win['captureAttempts']})`;
             retryBtn.style.cssText = `
               width: 100%;
               padding: 16px 24px;
@@ -1118,7 +1124,7 @@ export async function POST(req: NextRequest) {
             });
 
             retryBtn.addEventListener('click', () => {
-              window['renderButtonState']('initial');
+              (win['renderButtonState'] as (s: string) => void)('initial');
             });
 
             errorDiv.appendChild(errorHeader);
@@ -1126,7 +1132,7 @@ export async function POST(req: NextRequest) {
             errorDiv.appendChild(retryBtn);
 
             // Show manual entry link after 2+ attempts
-            if (window['captureAttempts'] >= 2) {
+            if ((win['captureAttempts'] as number) >= 2) {
               const manualLink = document.createElement('button');
               manualLink.style.cssText = `
                 width: 100%;
@@ -1151,7 +1157,7 @@ export async function POST(req: NextRequest) {
               });
 
               manualLink.addEventListener('click', () => {
-                window['renderButtonState']('manual');
+                (win['renderButtonState'] as (s: string) => void)('manual');
               });
 
               errorDiv.appendChild(manualLink);
@@ -1188,7 +1194,7 @@ export async function POST(req: NextRequest) {
             });
 
             closeBtnError.addEventListener('click', () => {
-              window['closeRequested'] = true;
+              win['closeRequested'] = true;
             });
 
             errorDiv.appendChild(closeBtnError);
@@ -1268,8 +1274,8 @@ export async function POST(req: NextRequest) {
 
               // Validate format (alphanumeric, reasonable length)
               if (enteredId && /^[a-zA-Z0-9]{8,}$/.test(enteredId)) {
-                window['capturedSimplePracticeId'] = enteredId;
-                window['renderButtonState']('success');
+                win['capturedSimplePracticeId'] = enteredId;
+                (win['renderButtonState'] as (s: string) => void)('success');
               } else {
                 // Show validation error
                 input.style.borderColor = '#ef4444';
@@ -1297,7 +1303,7 @@ export async function POST(req: NextRequest) {
             cancelLink.textContent = '← Back to Capture';
 
             cancelLink.addEventListener('click', () => {
-              window['renderButtonState']('initial');
+              (win['renderButtonState'] as (s: string) => void)('initial');
             });
 
             // Close Browser button (always available)
@@ -1331,7 +1337,7 @@ export async function POST(req: NextRequest) {
             });
 
             closeBtnManual.addEventListener('click', () => {
-              window['closeRequested'] = true;
+              win['closeRequested'] = true;
             });
 
             manualDiv.appendChild(manualHeader);
@@ -1354,7 +1360,7 @@ export async function POST(req: NextRequest) {
 
         // Initialize with capture button AFTER everything is in the DOM
         console.log('[Popup] Calling renderButtonState(initial)...');
-        window['renderButtonState']('initial');
+        (win['renderButtonState'] as (s: string) => void)('initial');
         console.log('[Popup] ✓ Panel injected successfully');
         }, clientDataWithOrigin);
       };
@@ -1416,10 +1422,13 @@ export async function POST(req: NextRequest) {
       // Main polling loop
       while (true) {
         // Check for flags
-        const flags = await page.evaluate(() => ({
-          closeRequested: window['closeRequested'] || false,
-          capturedId: window['capturedSimplePracticeId'] || null,
-        }));
+        const flags = await page.evaluate(() => {
+          const w = window as unknown as Record<string, unknown>;
+          return {
+            closeRequested: (w['closeRequested'] as boolean) || false,
+            capturedId: (w['capturedSimplePracticeId'] as string) || null,
+          };
+        });
 
         capturedId = flags.capturedId;
 

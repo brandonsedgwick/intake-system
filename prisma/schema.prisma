@@ -310,6 +310,9 @@ model Client {
   acceptedSlot         String? // JSON object of AcceptedSlot (single slot client accepted)
   scheduledAppointment String? // JSON object of ScheduledAppointment (full scheduling details)
   schedulingProgress   String? // JSON object of SchedulingProgress (tracks scheduling workflow steps)
+  serviceCode          String? // Service code for appointment: 90837 (Psychotherapy) or 90791 (Psych Eval)
+  appointmentScreenshot String? // Base64-encoded screenshot of appointment form after creation
+  appointmentSeriesData String? // JSON: AppointmentSeriesData for series appointments (90791 + 90837)
 
   // PDF Screener Storage (Phase 10)
   screenerPdfData        String? // Base64-encoded PDF file
